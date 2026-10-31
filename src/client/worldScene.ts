@@ -18,6 +18,7 @@ import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type { PerSourceLog, Source } from '../shared/types';
 import { createLabelTexture } from './bookShelfBuilder';
+import { createBillboardSprite } from './spriteLoader';
 
 export interface WorldCallbacks {
   onSelectNpc: (sectionId: string) => void;
@@ -196,22 +197,16 @@ export class WorldSceneController {
     arch.userData = { interactableType: 'exitGate' };
     group.add(arch);
 
-    // Librarian figure standing by the Exit Gate
-    const libBody = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.28, 0.34, 1.45, 16),
-      new THREE.MeshStandardMaterial({ color: 0x1a1829 })
-    );
-    libBody.position.set(0, 0.9, 0.2);
-    libBody.userData = { interactableType: 'exitGate' };
-    group.add(libBody);
-
-    const libHead = new THREE.Mesh(
-      new THREE.SphereGeometry(0.21, 14, 14),
-      new THREE.MeshStandardMaterial({ color: 0xe8cbb1 })
-    );
-    libHead.position.set(0, 1.82, 0.2);
-    libHead.userData = { interactableType: 'exitGate' };
-    group.add(libHead);
+    // Librarian Aurelius Finch camera-facing billboard sprite standing by the Exit Gate
+    const librarianSprite = createBillboardSprite({
+      url: APP_CONFIG.art.librarian,
+      width: 1.75,
+      height: 2.2,
+      fallbackColorHex: 0xd4af37,
+      userData: { interactableType: 'exitGate' },
+    });
+    librarianSprite.position.set(0, 0, 0.22);
+    group.add(librarianSprite);
 
     const gateLabel = createLabelTexture(
       [
@@ -310,25 +305,28 @@ export class WorldSceneController {
       ped.userData = { interactableType: 'npc', sectionId: section.id };
       npcGroup.add(ped);
 
-      // Stylised NPC figure (robe + head + lantern staff)
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color: isHinted ? 0xfde047 : tierInfo.colorHex,
-        emissive: isHinted ? 0xf59e0b : 0x000000,
-        emissiveIntensity: isHinted ? 0.7 : 0,
-        roughness: 0.45,
+      // Camera-facing Nano Banana NPC billboard sprite on pedestal
+      const npcSprite = createBillboardSprite({
+        url: APP_CONFIG.art.npcs[source.tier],
+        width: 1.55,
+        height: 1.98,
+        fallbackColorHex: tierInfo.colorHex,
+        tintHex: isHinted ? 0xfff59d : 0xffffff,
+        userData: { interactableType: 'npc', sectionId: section.id },
       });
-      const body = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.45, 16), bodyMat);
-      body.position.y = 0.95;
-      body.userData = { interactableType: 'npc', sectionId: section.id };
-      npcGroup.add(body);
+      npcSprite.position.set(0, 0.25, 0);
+      npcGroup.add(npcSprite);
 
-      const head = new THREE.Mesh(
-        new THREE.SphereGeometry(0.24, 16, 16),
-        new THREE.MeshStandardMaterial({ color: 0xf3d7be })
-      );
-      head.position.y = 1.82;
-      head.userData = { interactableType: 'npc', sectionId: section.id };
-      npcGroup.add(head);
+      // Companion tier creature sprite perched on the edge of the NPC pedestal
+      const companionSprite = createBillboardSprite({
+        url: APP_CONFIG.art.creatures[source.tier],
+        width: 0.65,
+        height: 0.78,
+        fallbackColorHex: tierInfo.colorHex,
+        userData: { interactableType: 'npc', sectionId: section.id },
+      });
+      companionSprite.position.set(0.58, 0.25, 0.15);
+      npcGroup.add(companionSprite);
 
       if (isHinted) {
         const hintLight = new THREE.PointLight(0xfbbf24, 3.0, 6.0);

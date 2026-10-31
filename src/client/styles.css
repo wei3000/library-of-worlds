@@ -389,6 +389,23 @@ body {
   color: #fde68a;
 }
 
+.npc-header-bio {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.npc-portrait-thumb {
+  width: 68px;
+  height: 68px;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  background: #fff;
+  flex-shrink: 0;
+}
+
 .badge-pill {
   display: inline-block;
   padding: 0.18rem 0.55rem;

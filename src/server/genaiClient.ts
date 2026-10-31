@@ -233,3 +233,123 @@ export async function runReasoningInteraction(params: {
     ? lastError
     : new Error(`All Gemini models failed for action ${params.action}`);
 }
+
+/**
+ * Calls the Gemini Interactions API (`client.interactions.create`) with Nano Banana 2.1
+ * (`gemini-nano-banana-2.1`, fallback `gemini-3.1-flash-lite-image`) to generate an image.
+ * Includes exponential backoff on 429/503 and logs all parameters and sanitized outputs via `logGenAiCall`.
+ *
+ * @param params - Action label, text prompt for image generation, and optional model override list.
+ * @returns Object containing base64 image data, MIME type, and the model identifier used.
+ */
+export async function runImageGenerationInteraction(params: {
+  action: string;
+  prompt: string;
+  modelsToTry?: string[];
+}): Promise<{ imageBase64: string; mimeType: string; modelUsed: string }> {
+  logFunctionCall('runImageGenerationInteraction', {
+    action: params.action,
+    promptLength: params.prompt.length,
+    modelsToTry: params.modelsToTry,
+  });
+
+  const client = getGenAiClient();
+  if (!client) {
+    throw new Error('GEMINI_API_KEY is not configured in .env');
+  }
+
+  const modelChain = params.modelsToTry ?? [
+    APP_CONFIG.models.imagePrimary,
+    APP_CONFIG.models.imageFallback,
+  ];
+
+  let lastError: unknown = null;
+
+  for (const model of modelChain) {
+    let delayMs: number = APP_CONFIG.retry.initialDelayMs;
+    for (let attempt = 1; attempt <= APP_CONFIG.retry.maxAttemptsPerModel; attempt++) {
+      const requestConfig: Record<string, unknown> = {
+        model,
+        input: params.prompt,
+      };
+
+      try {
+        const interactionsApi = (client as unknown as {
+          interactions?: {
+            create: (req: Record<string, unknown>) => Promise<{
+              id?: string;
+              status?: string;
+              usage?: unknown;
+              output_image?: { data?: string; mime_type?: string } | null;
+              steps?: Array<{
+                type?: string;
+                content?: Array<{ type?: string; data?: string; mime_type?: string }>;
+              }>;
+            }>;
+          };
+        }).interactions;
+
+        if (interactionsApi && typeof interactionsApi.create === 'function') {
+          const interaction = await interactionsApi.create(requestConfig);
+          let imgData = interaction.output_image?.data;
+          let mimeType = interaction.output_image?.mime_type ?? 'image/png';
+
+          if (!imgData && Array.isArray(interaction.steps)) {
+            for (const step of interaction.steps) {
+              if (Array.isArray(step.content)) {
+                for (const part of step.content) {
+                  if (part.type === 'image' && part.data) {
+                    imgData = part.data;
+                    mimeType = part.mime_type ?? 'image/png';
+                  }
+                }
+              }
+            }
+          }
+
+          if (!imgData) {
+            throw new Error(`Model ${model} returned no output_image data for ${params.action}`);
+          }
+
+          logGenAiCall({
+            action: params.action,
+            model,
+            prompt: params.prompt,
+            config: { attempt },
+            output: {
+              id: interaction.id,
+              status: interaction.status,
+              mimeType,
+              imageData: imgData, // Stripped automatically by logGenAiCall's sanitizePayload
+              usage: interaction.usage,
+            },
+          });
+
+          return { imageBase64: imgData, mimeType, modelUsed: model };
+        }
+
+        throw new Error('SDK client.interactions.create is not available');
+      } catch (err) {
+        lastError = err;
+        logGenAiCall({
+          action: `${params.action} [ATTEMPT_${attempt}_FAILED]`,
+          model,
+          prompt: params.prompt,
+          config: requestConfig,
+          error: err,
+        });
+
+        const { retryable } = classifyError(err);
+        if (!retryable || attempt === APP_CONFIG.retry.maxAttemptsPerModel) {
+          break;
+        }
+        await sleep(delayMs);
+        delayMs = Math.round(delayMs * APP_CONFIG.retry.backoffMultiplier);
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`All image generation models failed for action ${params.action}`);
+}

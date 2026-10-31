@@ -13,6 +13,7 @@
  * 2. Collecting exact quote tokens to present as evidence at the Exit Gate.
  */
 
+import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type { Section, Source } from '../shared/types';
 import { audioManager } from './audioManager';
@@ -40,15 +41,19 @@ export function renderNpcDialogueUi(
 
   const log = sessionStore.getPerSourceLog(source.id);
   const allCollected = section.quoteTokens.every((t) => log.tokensCollected.includes(t.id));
+  const portraitUrl = section.npc.portraitUrl || APP_CONFIG.art.npcs[source.tier];
 
   container.classList.remove('hidden');
   container.innerHTML = `
     <div class="modal-card npc-card">
       <div class="modal-header">
-        <div>
-          <span class="badge-pill">${section.npc.role}</span>
-          <h3>${section.npc.name}</h3>
-          <div class="subtle-text">${section.heading}</div>
+        <div class="npc-header-bio">
+          <img class="npc-portrait-thumb" src="${portraitUrl}" alt="${section.npc.name}" />
+          <div>
+            <span class="badge-pill">${section.npc.role}</span>
+            <h3>${section.npc.name}</h3>
+            <div class="subtle-text">${section.heading}</div>
+          </div>
         </div>
         <button id="npc-close-btn" class="btn-secondary" title="Close Dialogue">✕</button>
       </div>

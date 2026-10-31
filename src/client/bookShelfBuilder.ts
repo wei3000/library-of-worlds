@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type { Source } from '../shared/types';
+import { createBillboardSprite } from './spriteLoader';
 
 export interface BookPlacement {
   source: Source;
@@ -114,41 +115,19 @@ export function buildLibrarianDesk(scene: THREE.Scene): THREE.Group {
   kiskadeeGroup.add(birdHead);
   group.add(kiskadeeGroup);
 
-  // Victorian Gentleman Librarian (tailcoat, waistcoat, pocket watch chain, top hat)
+  // Victorian Gentleman Librarian (Nano Banana camera-facing billboard sprite)
   const librarianGroup = new THREE.Group();
   librarianGroup.position.set(0, 0, -0.95);
 
-  const coatMat = new THREE.MeshStandardMaterial({ color: 0x1a1829, roughness: 0.7 });
-  const waistcoatMat = new THREE.MeshStandardMaterial({ color: 0x5c1d24, roughness: 0.5 });
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8cbb1, roughness: 0.6 });
-
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 1.35, 16), coatMat);
-  torso.position.y = 1.15;
-  torso.userData = { interactableType: 'librarian' };
-  librarianGroup.add(torso);
-
-  const waistcoat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.65, 0.22), waistcoatMat);
-  waistcoat.position.set(0, 1.25, 0.24);
-  waistcoat.userData = { interactableType: 'librarian' };
-  librarianGroup.add(waistcoat);
-
-  // Pocket watch gold chain
-  const watchChain = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.015, 8, 20), brassMat);
-  watchChain.position.set(0.08, 1.12, 0.36);
-  librarianGroup.add(watchChain);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 16, 16), skinMat);
-  head.position.y = 2.02;
-  head.userData = { interactableType: 'librarian' };
-  librarianGroup.add(head);
-
-  const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.04, 16), coatMat);
-  hatBrim.position.y = 2.22;
-  librarianGroup.add(hatBrim);
-
-  const hatCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.22, 0.36, 16), coatMat);
-  hatCrown.position.y = 2.41;
-  librarianGroup.add(hatCrown);
+  const librarianSprite = createBillboardSprite({
+    url: APP_CONFIG.art.librarian,
+    width: 1.85,
+    height: 2.35,
+    fallbackColorHex: 0xd4af37,
+    userData: { interactableType: 'librarian' },
+  });
+  librarianSprite.position.set(0, 0, 0);
+  librarianGroup.add(librarianSprite);
 
   // Floating nameplate above Librarian
   const signTex = createLabelTexture(
@@ -161,7 +140,7 @@ export function buildLibrarianDesk(scene: THREE.Scene): THREE.Group {
     new THREE.PlaneGeometry(2.2, 0.72),
     new THREE.MeshBasicMaterial({ map: signTex })
   );
-  signMesh.position.set(0, 2.95, 0);
+  signMesh.position.set(0, 2.65, 0);
   signMesh.userData = { interactableType: 'librarian' };
   librarianGroup.add(signMesh);
 
@@ -290,6 +269,20 @@ export function buildThemedShelvesAndBooks(
         sourceId: source.id,
       };
       bookGroup.add(spineBand);
+
+      // Camera-facing tier creature billboard sprite perched beside the book
+      const creatureSprite = createBillboardSprite({
+        url: APP_CONFIG.art.creatures[source.tier],
+        width: 0.48,
+        height: 0.58,
+        fallbackColorHex: tierInfo.colorHex,
+        userData: {
+          interactableType: 'book',
+          sourceId: source.id,
+        },
+      });
+      creatureSprite.position.set(0.38, -0.34, 0.12);
+      bookGroup.add(creatureSprite);
 
       // Floating Tier & Path Order badge above the book
       const statusPrefix = isCompleted ? '✓ COMPLETED' : `Path #${pathOrder}`;

@@ -213,4 +213,23 @@ export const APP_CONFIG = {
     elfGiggle: '/audio/elf-giggle.mp3',
     pageTurn: '/audio/page-turn.mp3',
   },
+
+  /** Cached Nano Banana 2.1 character & creature sprite paths in `/public/art/`. */
+  art: {
+    librarian: '/art/librarian-aurelius.png',
+    creatures: {
+      imp: '/art/creature-imp.png',
+      goblin: '/art/creature-goblin.png',
+      apprentice: '/art/creature-apprentice.png',
+      wizard: '/art/creature-wizard.png',
+      archmage: '/art/creature-archmage.png',
+    } satisfies Record<SourceTier, string>,
+    npcs: {
+      imp: '/art/npc-imp.png',
+      goblin: '/art/npc-goblin.png',
+      apprentice: '/art/npc-apprentice.png',
+      wizard: '/art/npc-wizard.png',
+      archmage: '/art/npc-archmage.png',
+    } satisfies Record<SourceTier, string>,
+  },
 } as const;
