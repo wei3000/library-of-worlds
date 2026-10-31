@@ -14,6 +14,11 @@ import * as THREE from 'three';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type { Source } from '../shared/types';
+import {
+  buildDecorativeLibraryBooks,
+  type BookcaseDressingSpec,
+  type ReservedShelfSlot,
+} from './decorativeBooksInstancer';
 import { createBillboardSprite } from './spriteLoader';
 
 export interface BookPlacement {
@@ -195,6 +200,7 @@ export function buildThemedShelvesAndBooks(
   ];
 
   const placements: BookPlacement[] = [];
+  const bookcaseSpecs: BookcaseDressingSpec[] = [];
   let themeIdx = 0;
 
   for (const [themeName, themeSources] of themeGroups.entries()) {
@@ -205,14 +211,21 @@ export function buildThemedShelvesAndBooks(
     shelfGroup.position.set(loc.x, 0, loc.z);
     shelfGroup.rotation.y = loc.rotY;
 
-    // Bookcase frame
-    const backPanel = new THREE.Mesh(new THREE.BoxGeometry(3.4, 3.6, 0.18), woodMat);
-    backPanel.position.set(0, 1.8, -0.25);
+    // Bookcase frame & side pilasters
+    const backPanel = new THREE.Mesh(new THREE.BoxGeometry(3.6, 3.85, 0.18), woodMat);
+    backPanel.position.set(0, 1.925, -0.25);
     shelfGroup.add(backPanel);
 
-    // 3 horizontal shelf planks
-    for (const shelfY of [0.7, 1.65, 2.6]) {
-      const plank = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.1, 0.65), woodMat);
+    for (const sideX of [-1.72, 1.72]) {
+      const pilaster = new THREE.Mesh(new THREE.BoxGeometry(0.16, 3.85, 0.72), woodMat);
+      pilaster.position.set(sideX, 1.925, 0.02);
+      shelfGroup.add(pilaster);
+    }
+
+    // 4 horizontal shelf planks (top surfaces at shelfY + 0.05)
+    const shelfPlankYs = [0.65, 1.45, 2.25, 3.05];
+    for (const shelfY of shelfPlankYs) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(3.45, 0.1, 0.68), woodMat);
       plank.position.set(0, shelfY, 0.05);
       shelfGroup.add(plank);
     }
@@ -225,37 +238,50 @@ export function buildThemedShelvesAndBooks(
       '#fef08a'
     );
     const aisleSign = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.1, 0.75),
+      new THREE.PlaneGeometry(3.25, 0.78),
       new THREE.MeshBasicMaterial({ map: aisleSignTex })
     );
-    aisleSign.position.set(0, 3.35, 0.18);
+    aisleSign.position.set(0, 3.62, 0.22);
     shelfGroup.add(aisleSign);
 
     // Warm overhead sconce light per bookcase
     const sconceLight = new THREE.PointLight(0xffbe6b, 1.8, 7.5);
-    sconceLight.position.set(0, 3.0, 1.1);
+    sconceLight.position.set(0, 3.2, 1.15);
     shelfGroup.add(sconceLight);
 
-    // Place each book in this theme onto the middle/lower reachable shelves
+    const reservedSlots: ReservedShelfSlot[] = [];
+
+    // Place each verified Source book onto the middle/lower reachable shelves, pulled half out
     themeSources.forEach((source, idx) => {
       const tierInfo = APP_CONFIG.tiers[source.tier];
       const pathOrder = readingPath.indexOf(source.id) + 1;
       const isCompleted = Boolean(completedMap[source.id]);
 
       const bookGroup = new THREE.Group();
-      const offsetX = (idx - (themeSources.length - 1) / 2) * 1.15;
-      const shelfY = idx % 2 === 0 ? 1.72 : 0.78;
-      bookGroup.position.set(offsetX, shelfY + 0.35, 0.18);
+      const offsetX = (idx - (themeSources.length - 1) / 2) * 1.12;
+      const plankY = idx % 2 === 0 ? 1.45 : 0.65;
+      const shelfTopY = plankY + 0.05;
 
-      // Interactive 3D book tome
+      // Reserve horizontal space on this shelf plank so decorative books frame the real book + creature
+      reservedSlots.push({
+        shelfY: shelfTopY,
+        centerX: offsetX + 0.12,
+        halfWidth: 0.56,
+      });
+
+      // Pulled half out from the shelf (z = 0.29 vs recessed decorative books at z = -0.025)
+      bookGroup.position.set(offsetX, shelfTopY + 0.34, 0.29);
+
+      // Interactive 3D book tome with standout tier glow
       const bookMat = new THREE.MeshStandardMaterial({
         color: tierInfo.colorHex,
-        roughness: 0.35,
-        metalness: 0.2,
+        roughness: 0.28,
+        metalness: 0.24,
         emissive: tierInfo.colorHex,
-        emissiveIntensity: isCompleted ? 0.45 : 0.18,
+        emissiveIntensity: isCompleted ? 0.65 : 0.42,
       });
-      const bookMesh = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.68, 0.38), bookMat);
+      const bookMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.68, 0.42), bookMat);
+      bookMesh.rotation.y = -0.08;
       bookMesh.userData = {
         interactableType: 'book',
         sourceId: source.id,
@@ -263,25 +289,31 @@ export function buildThemedShelvesAndBooks(
       bookGroup.add(bookMesh);
 
       // Gold spine band
-      const spineBand = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.4), trimMat);
+      const spineBand = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.44), trimMat);
+      spineBand.rotation.y = -0.08;
       spineBand.userData = {
         interactableType: 'book',
         sourceId: source.id,
       };
       bookGroup.add(spineBand);
 
-      // Camera-facing tier creature billboard sprite perched beside the book
+      // Soft point light glow in the book's tier colour
+      const bookGlow = new THREE.PointLight(tierInfo.colorHex, isCompleted ? 1.6 : 1.15, 2.2);
+      bookGlow.position.set(0, 0.08, 0.32);
+      bookGroup.add(bookGlow);
+
+      // Camera-facing tier creature billboard sprite perched beside the pulled-out book
       const creatureSprite = createBillboardSprite({
         url: APP_CONFIG.art.creatures[source.tier],
-        width: 0.48,
-        height: 0.58,
+        width: 0.5,
+        height: 0.6,
         fallbackColorHex: tierInfo.colorHex,
         userData: {
           interactableType: 'book',
           sourceId: source.id,
         },
       });
-      creatureSprite.position.set(0.38, -0.34, 0.12);
+      creatureSprite.position.set(0.38, -0.34, 0.04);
       bookGroup.add(creatureSprite);
 
       // Floating Tier & Path Order badge above the book
@@ -327,7 +359,57 @@ export function buildThemedShelvesAndBooks(
     });
 
     scene.add(shelfGroup);
+    shelfGroup.updateMatrixWorld(true);
+
+    bookcaseSpecs.push({
+      worldMatrix: shelfGroup.matrixWorld.clone(),
+      shelfSpanX: 3.18,
+      shelfSurfaceYs: shelfPlankYs.map((y) => y + 0.05),
+      reservedSlots,
+    });
   }
+
+  // Also dress the perimeter Victorian walls with grand floor-to-ceiling bookcases
+  const wallBookcaseLocations = [
+    { x: -12.6, z: -7.5, rotY: Math.PI / 2 },
+    { x: -12.6, z: -2.0, rotY: Math.PI / 2 },
+    { x: -12.6, z: 3.5, rotY: Math.PI / 2 },
+    { x: 12.6, z: -7.5, rotY: -Math.PI / 2 },
+    { x: 12.6, z: -2.0, rotY: -Math.PI / 2 },
+    { x: 12.6, z: 3.5, rotY: -Math.PI / 2 },
+    { x: -7.5, z: -12.6, rotY: 0 },
+    { x: 7.5, z: -12.6, rotY: 0 },
+  ];
+
+  const wallShelfPlankYs = [0.55, 1.35, 2.15, 2.95, 3.75];
+  for (const wLoc of wallBookcaseLocations) {
+    const wallCase = new THREE.Group();
+    wallCase.position.set(wLoc.x, 0, wLoc.z);
+    wallCase.rotation.y = wLoc.rotY;
+
+    const backPanel = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.6, 0.16), woodMat);
+    backPanel.position.set(0, 2.3, -0.25);
+    wallCase.add(backPanel);
+
+    for (const shelfY of wallShelfPlankYs) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(4.05, 0.1, 0.62), woodMat);
+      plank.position.set(0, shelfY, 0.04);
+      wallCase.add(plank);
+    }
+
+    scene.add(wallCase);
+    wallCase.updateMatrixWorld(true);
+
+    bookcaseSpecs.push({
+      worldMatrix: wallCase.matrixWorld.clone(),
+      shelfSpanX: 3.85,
+      shelfSurfaceYs: wallShelfPlankYs.map((y) => y + 0.05),
+      reservedSlots: [],
+    });
+  }
+
+  // Populate all aisle and wall bookcases with hundreds of varied decorative books via InstancedMesh
+  buildDecorativeLibraryBooks(scene, bookcaseSpecs);
 
   return placements.sort((a, b) => a.pathIndex - b.pathIndex);
 }
