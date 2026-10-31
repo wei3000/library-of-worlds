@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type { Source } from '../shared/types';
+import { audioManager } from './audioManager';
 import { renderExitGateUi } from './exitGateUi';
 import { renderFullTextModal } from './fullTextModal';
 import { HubSceneController } from './hubScene';
@@ -197,6 +198,7 @@ function syncUiAndScenes(): void {
 
   if (!activeSource) {
     // Player is in the 3D Victorian Library Hub
+    audioManager.stopAllMenaceAudio();
     modeIndicator.textContent = '📍 Victorian Hub (WASD Walk + Mouse Drag Look + Click Book)';
     worldToolbar.classList.add('hidden');
     satchelContainer.classList.add('hidden');

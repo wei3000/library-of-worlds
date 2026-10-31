@@ -71,3 +71,10 @@ npm run dev
 ### Stubbed for Upcoming Milestones
 - **Milestone 4**: Hub Exit Debrief with claim verification, mischievous Elves for unsupported claims, and printable Borrowing Record PDF.
 - **Milestone 5**: Gemini Live (`gemini-3.8-live`) bidirectional voice and Gemini TTS (`gemini-3.8-flash-tts`) Voice Design character voices.
+
+---
+
+## Audio Attribution (xeno-canto.org)
+Natural bird vocalisation recordings in `/public/audio/` are sourced from [xeno-canto.org](https://xeno-canto.org):
+- **`crow-caw.mp3` (Crow caw)**: Recorded by **[Recordist Name TBD]**, xeno-canto catalog number **[XC\_\_\_\_\_\_]** *(with procedural WebAudio bandpass-filtered noise fallback if absent)*.
+- **`kiskadee-call.mp3` (Great Kiskadee — *Pitangus sulphuratus* call)**: Recorded by **[Recordist Name TBD]**, xeno-canto catalog number **[XC\_\_\_\_\_\_]** *(with procedural WebAudio three-note call fallback if absent)*.

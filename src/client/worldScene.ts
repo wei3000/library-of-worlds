@@ -9,14 +9,20 @@
  *
  * Also handles:
  * - Unconnected worlds (fog, distant castle silhouette, "This wing of the library is not yet connected" sign).
- * - Per-world Menace Level (0-3): darkens lights, thickens fog, spawns circling Crows, and makes the
- *   hint NPC glow brightly after a wrong Exit Gate answer.
+ * - Per-world Menace Level (0-3) with Nano Banana crow sprites (`/art/crow.png`) and real audio cues:
+ *   - Level 1: 1 crow sprite lands on a perch in the scene.
+ *   - Level 2: 2 crow sprites (perched + circling), light dims further, occasional distant caws loop.
+ *   - Level 3: 3 crows circling overhead + 1 crow perched on Head Librarian Aurelius Finch's shoulder,
+ *     frequent overlapping caws, thick desaturated fog.
+ *   - On Pass (Level 0): Crows take off and fly away into the sky, caws stop, Great Kiskadee call plays,
+ *     and warm light returns.
  */
 
 import * as THREE from 'three';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type { PerSourceLog, Source } from '../shared/types';
+import { audioManager } from './audioManager';
 import { createLabelTexture } from './bookShelfBuilder';
 import { createBillboardSprite } from './spriteLoader';
 import {
@@ -36,9 +42,12 @@ export class WorldSceneController {
   public readonly camera: THREE.PerspectiveCamera;
   private contentGroup: THREE.Group;
   private crowGroup: THREE.Group;
+  private departingCrowGroup: THREE.Group;
   private animatedProps: BuiltWorldTemplate['animatedProps'] = [];
   private ambientLight: THREE.AmbientLight;
   private centerLight: THREE.PointLight;
+  private librarianShoulderWorldPos = new THREE.Vector3(3.2, 1.72, -4.8);
+  private scenePerchWorldPos = new THREE.Vector3(-1.45, 2.25, -4.6);
   private yaw = 0;
   private pitch = 0;
   private isDragging = false;
@@ -75,6 +84,9 @@ export class WorldSceneController {
 
     this.crowGroup = new THREE.Group();
     this.scene.add(this.crowGroup);
+
+    this.departingCrowGroup = new THREE.Group();
+    this.scene.add(this.departingCrowGroup);
   }
 
   /**
@@ -106,6 +118,9 @@ export class WorldSceneController {
     const fullTextObj = buildTierFullTextObject(source);
     this.contentGroup.add(fullTextObj);
 
+    // 2b. Wooden/iron crow perch stand between the Full-Text object and the Exit Gate
+    this.buildScenePerchStand();
+
     // 3. Exit Gate & Librarian placed forward-right (angle = +0.62 rad)
     this.buildExitGate(source, log);
 
@@ -120,6 +135,34 @@ export class WorldSceneController {
   }
 
   /**
+   * Builds a carved Victorian iron-and-oak perch stand in the forward view where the first
+   * crow lands when Menace reaches Level 1.
+   */
+  private buildScenePerchStand(): void {
+    const standGroup = new THREE.Group();
+    standGroup.position.set(this.scenePerchWorldPos.x, 0, this.scenePerchWorldPos.z);
+
+    const postMat = new THREE.MeshStandardMaterial({
+      color: 0x2d1e14,
+      roughness: 0.75,
+      metalness: 0.2,
+    });
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.1, this.scenePerchWorldPos.y, 10),
+      postMat
+    );
+    post.position.y = this.scenePerchWorldPos.y / 2;
+    standGroup.add(post);
+
+    const crossbar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.65, 8), postMat);
+    crossbar.rotation.z = Math.PI / 2;
+    crossbar.position.y = this.scenePerchWorldPos.y;
+    standGroup.add(crossbar);
+
+    this.contentGroup.add(standGroup);
+  }
+
+  /**
    * Builds the Librarian Exit Gate at the world's edge where the student proves understanding.
    * When `log.completed` is true, a Great Kiskadee bird (bright yellow breast, brown wings,
    * black-and-white mask) perches atop the archway.
@@ -128,8 +171,13 @@ export class WorldSceneController {
     const group = new THREE.Group();
     const angle = 0.62;
     const dist = APP_CONFIG.world.exitGateDistance;
-    group.position.set(Math.sin(angle) * dist, 0, -Math.cos(angle) * dist);
+    const gateX = Math.sin(angle) * dist;
+    const gateZ = -Math.cos(angle) * dist;
+    group.position.set(gateX, 0, gateZ);
     group.lookAt(0, 1.5, 0);
+
+    // Compute world coordinates for the Librarian's shoulder perch (used at Menace Level 3)
+    this.librarianShoulderWorldPos.set(gateX - 0.34, 1.62, gateZ + 0.24);
 
     const gateColor = log.completed ? 0x10b981 : 0xd4af37;
     const archMat = new THREE.MeshStandardMaterial({
@@ -213,7 +261,6 @@ export class WorldSceneController {
    */
   private buildUnconnectedWing(source: Source): void {
     logFunctionCall('WorldSceneController.buildUnconnectedWing', { sourceId: source.id });
-    // Distant castle silhouette across the misty chasm
     const castleGroup = new THREE.Group();
     castleGroup.position.set(0, 0, -14);
     const silhouetteMat = new THREE.MeshBasicMaterial({ color: 0x09070f });
@@ -232,7 +279,6 @@ export class WorldSceneController {
     }
     this.contentGroup.add(castleGroup);
 
-    // Signpost: "This wing of the library is not yet connected"
     const signTex = createLabelTexture(
       [
         '🌫️ This wing of the library is not yet connected',
@@ -261,7 +307,6 @@ export class WorldSceneController {
     const radius = APP_CONFIG.world.npcRadius;
 
     sections.forEach((section, idx) => {
-      // Spread NPCs across the remaining 240 degrees of the 360° circle in reading order
       const startAngle = Math.PI * 0.38;
       const endAngle = Math.PI * 1.62;
       const t = sections.length > 1 ? idx / (sections.length - 1) : 0.5;
@@ -343,7 +388,13 @@ export class WorldSceneController {
   }
 
   /**
-   * Adjusts world lighting, fog density, background colour, and circling Crows according to `currentMenace` (0-3).
+   * Adjusts world lighting, fog density, background desaturation, audio loops, and Nano Banana
+   * crow sprites (`/art/crow.png`) according to `currentMenace` (0-3):
+   * - 0 (Pass/Reset): Any existing crows take off and fly away; warm light returns.
+   * - 1: 1 crow sprite lands on the wooden perch stand in the scene.
+   * - 2: 2 crows (1 on perch, 1 circling overhead), light dims further, occasional distant caws loop.
+   * - 3: 3 crows circling overhead + 1 crow perched on the Librarian's shoulder, frequent overlapping
+   *   caws, thick desaturated fog.
    *
    * @param source - Active `Source`.
    * @param menaceLevel - Current per-world menace level (0-3).
@@ -357,27 +408,125 @@ export class WorldSceneController {
     const visuals = APP_CONFIG.world.menaceVisuals[clamped];
     const tierInfo = APP_CONFIG.tiers[source.tier];
 
+    // Update ambient looping crow caws for Levels 2 and 3 (or silence at Level 0)
+    audioManager.setMenaceAudioLevel(clamped);
+
+    // Desaturate and thicken fog as menace rises (especially thick & desaturated at Level 3)
     const baseColor = new THREE.Color(tierInfo.fogHex);
-    const hellishColor = new THREE.Color(0x2a080c);
-    baseColor.lerp(hellishColor, clamped / 3);
+    const desaturatedSlate = new THREE.Color(0x1c1b20);
+    baseColor.lerp(desaturatedSlate, clamped / 3);
+    const hsl = { h: 0, s: 0, l: 0 };
+    baseColor.getHSL(hsl);
+    baseColor.setHSL(hsl.h, hsl.s * visuals.saturation, hsl.l);
 
     this.scene.background = baseColor;
     this.scene.fog = new THREE.FogExp2(baseColor.getHex(), visuals.fogDensity);
     this.ambientLight.intensity = 0.85 * visuals.lightMultiplier;
     this.centerLight.intensity = 2.2 * visuals.lightMultiplier;
-    this.centerLight.color.setHex(clamped > 0 ? 0xff6b4a : 0xffddaa);
+    if (clamped === 0) {
+      this.centerLight.color.setHex(0xffddaa);
+    } else if (clamped < 3) {
+      this.centerLight.color.setHex(0xd69e72);
+    } else {
+      // Desaturated cold ashen light at Menace 3
+      this.centerLight.color.setHex(0x8e8d96);
+    }
 
-    // Rebuild circling crows for Menace > 0
+    // If menace drops to 0 (student passed!) and crows were present, animate them taking off and flying away
+    if (clamped === 0 && this.crowGroup.children.length > 0) {
+      while (this.crowGroup.children.length > 0) {
+        const crow = this.crowGroup.children[0];
+        this.crowGroup.remove(crow);
+        const angle = Math.random() * Math.PI * 2;
+        crow.userData = {
+          ...crow.userData,
+          departAge: 0,
+          vx: Math.cos(angle) * 3.8,
+          vy: 3.4 + Math.random() * 1.6,
+          vz: Math.sin(angle) * 3.8,
+        };
+        this.departingCrowGroup.add(crow);
+      }
+      return;
+    }
+
+    // Rebuild active crow sprites for the current menace level
     while (this.crowGroup.children.length > 0) {
       this.crowGroup.remove(this.crowGroup.children[0]);
     }
-    const crowMat = new THREE.MeshBasicMaterial({ color: 0x09090b });
-    for (let i = 0; i < visuals.crowCount; i++) {
-      const crow = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.5, 6), crowMat);
-      crow.rotation.z = Math.PI / 2;
-      crow.userData = { crowIndex: i };
-      this.crowGroup.add(crow);
+
+    if (clamped === 1) {
+      // Level 1: One crow sprite lands on the perch in the scene
+      const perchedCrow = this.createCrowSprite(0.88, 0.88, {
+        mode: 'perched',
+        basePos: this.scenePerchWorldPos.clone(),
+        phase: 0.4,
+      });
+      perchedCrow.position.copy(this.scenePerchWorldPos);
+      this.crowGroup.add(perchedCrow);
+    } else if (clamped === 2) {
+      // Level 2: Two crows (one on perch, one circling slowly overhead)
+      const perchedCrow = this.createCrowSprite(0.88, 0.88, {
+        mode: 'perched',
+        basePos: this.scenePerchWorldPos.clone(),
+        phase: 0.4,
+      });
+      perchedCrow.position.copy(this.scenePerchWorldPos);
+      this.crowGroup.add(perchedCrow);
+
+      const circlingCrow = this.createCrowSprite(0.92, 0.92, {
+        mode: 'circling',
+        orbitIndex: 0,
+        orbitTotal: 1,
+        radius: 3.9,
+        baseHeight: 3.25,
+        phase: 1.7,
+      });
+      this.crowGroup.add(circlingCrow);
+    } else if (clamped >= 3) {
+      // Level 3: Three crows circling overhead + one crow perched on the Librarian's shoulder
+      for (let i = 0; i < 3; i++) {
+        const circlingCrow = this.createCrowSprite(0.92, 0.92, {
+          mode: 'circling',
+          orbitIndex: i,
+          orbitTotal: 3,
+          radius: 3.5 + (i % 2) * 0.85,
+          baseHeight: 3.15 + i * 0.25,
+          phase: i * 2.1,
+        });
+        this.crowGroup.add(circlingCrow);
+      }
+
+      const shoulderCrow = this.createCrowSprite(0.68, 0.68, {
+        mode: 'shoulder',
+        basePos: this.librarianShoulderWorldPos.clone(),
+        phase: 2.8,
+      });
+      shoulderCrow.position.copy(this.librarianShoulderWorldPos);
+      this.crowGroup.add(shoulderCrow);
     }
+  }
+
+  /**
+   * Helper that creates a Nano Banana crow billboard sprite (`/art/crow.png`) with base scale
+   * metadata for flapping and bobbing animations.
+   */
+  private createCrowSprite(
+    width: number,
+    height: number,
+    userData: Record<string, unknown>
+  ): THREE.Sprite {
+    return createBillboardSprite({
+      url: APP_CONFIG.art.crow,
+      width,
+      height,
+      fallbackColorHex: 0x18181b,
+      userData: {
+        baseWidth: width,
+        baseHeight: height,
+        ...userData,
+      },
+    });
   }
 
   /**
@@ -446,7 +595,8 @@ export class WorldSceneController {
   }
 
   /**
-   * Animates circling crows (when Menace > 0) and tier-specific mechanical/celestial props.
+   * Animates perched/circling/departing crow sprites (flapping scale + vertical bob) and
+   * tier-specific mechanical/celestial props.
    *
    * @param deltaSeconds - Frame delta time in seconds.
    */
@@ -457,15 +607,68 @@ export class WorldSceneController {
       prop.object.rotation[prop.axis] += prop.speed * deltaSeconds;
     }
 
-    this.crowGroup.children.forEach((crow, idx) => {
-      const angle = this.elapsedTime * 1.4 + idx * 1.2;
-      const radius = 3.8 + (idx % 2) * 1.1;
-      crow.position.set(
-        Math.cos(angle) * radius,
-        3.2 + Math.sin(this.elapsedTime * 2 + idx) * 0.35,
-        Math.sin(angle) * radius
-      );
-      crow.rotation.y = -angle;
+    // Animate active menace crows (perched, shoulder, or circling overhead)
+    this.crowGroup.children.forEach((crow) => {
+      const data = crow.userData ?? {};
+      const baseW = (data.baseWidth as number) ?? 0.88;
+      const baseH = (data.baseHeight as number) ?? 0.88;
+      const phase = (data.phase as number) ?? 0;
+      const mode = (data.mode as string) ?? 'circling';
+
+      if (mode === 'perched' || mode === 'shoulder') {
+        const basePos = (data.basePos as THREE.Vector3) ?? crow.position;
+        const bob = Math.abs(Math.sin(this.elapsedTime * 3.4 + phase)) * 0.055;
+        const flap = Math.sin(this.elapsedTime * 5.2 + phase) * 0.065;
+        crow.position.set(basePos.x, basePos.y + bob, basePos.z);
+        crow.scale.set(baseW * (1 + flap), baseH * (1 - flap * 0.5), 1);
+      } else {
+        // Circling overhead with active wing-flapping scale and vertical bob
+        const orbitIndex = (data.orbitIndex as number) ?? 0;
+        const orbitTotal = Math.max(1, (data.orbitTotal as number) ?? 1);
+        const radius = (data.radius as number) ?? 3.8;
+        const baseHeight = (data.baseHeight as number) ?? 3.2;
+        const angle =
+          this.elapsedTime * 1.35 + (orbitIndex * Math.PI * 2) / orbitTotal + phase * 0.25;
+        const flap = Math.sin(this.elapsedTime * 11.5 + phase);
+        const bob = Math.sin(this.elapsedTime * 4.5 + phase) * 0.24;
+
+        crow.position.set(
+          Math.cos(angle) * radius,
+          baseHeight + bob,
+          Math.sin(angle) * radius
+        );
+        crow.scale.set(baseW * (1 + flap * 0.16), baseH * (1 - flap * 0.09), 1);
+      }
     });
+
+    // Animate departing crows flying away into the sky after the student passes the Exit Gate
+    for (let i = this.departingCrowGroup.children.length - 1; i >= 0; i--) {
+      const crow = this.departingCrowGroup.children[i];
+      const data = crow.userData ?? {};
+      const age = ((data.departAge as number) ?? 0) + deltaSeconds;
+      data.departAge = age;
+
+      const vx = (data.vx as number) ?? 2.5;
+      const vy = (data.vy as number) ?? 3.5;
+      const vz = (data.vz as number) ?? -2.5;
+      const baseW = (data.baseWidth as number) ?? 0.88;
+      const baseH = (data.baseHeight as number) ?? 0.88;
+
+      crow.position.x += vx * deltaSeconds;
+      crow.position.y += vy * deltaSeconds;
+      crow.position.z += vz * deltaSeconds;
+
+      const fastFlap = Math.sin(this.elapsedTime * 18 + i);
+      const shrink = Math.max(0.1, 1 - age / 2.0);
+      crow.scale.set(
+        baseW * shrink * (1 + fastFlap * 0.22),
+        baseH * shrink * (1 - fastFlap * 0.12),
+        1
+      );
+
+      if (age >= 1.95) {
+        this.departingCrowGroup.remove(crow);
+      }
+    }
   }
 }

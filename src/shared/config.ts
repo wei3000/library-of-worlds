@@ -204,13 +204,13 @@ export const APP_CONFIG = {
     maxMenace: 3,
     menaceVisuals: [
       { level: 0, fogDensity: 0.025, lightMultiplier: 1.0, saturation: 1.0, crowCount: 0 },
-      { level: 1, fogDensity: 0.048, lightMultiplier: 0.72, saturation: 0.75, crowCount: 2 },
-      { level: 2, fogDensity: 0.075, lightMultiplier: 0.48, saturation: 0.45, crowCount: 4 },
-      { level: 3, fogDensity: 0.11, lightMultiplier: 0.28, saturation: 0.2, crowCount: 7 },
+      { level: 1, fogDensity: 0.048, lightMultiplier: 0.72, saturation: 0.75, crowCount: 1 },
+      { level: 2, fogDensity: 0.075, lightMultiplier: 0.45, saturation: 0.4, crowCount: 2 },
+      { level: 3, fogDensity: 0.115, lightMultiplier: 0.25, saturation: 0.1, crowCount: 4 },
     ],
   },
 
-  /** Placeholder audio file paths in `/public/audio/` (with WebAudio synth fallbacks if absent). */
+  /** Audio files in `/public/audio/` (with WebAudio synth fallbacks if absent). */
   audio: {
     ambientHubLoop: '/audio/library-ambient-loop.mp3',
     kiskadeeCall: '/audio/kiskadee-call.mp3',
@@ -220,9 +220,18 @@ export const APP_CONFIG = {
     pageTurn: '/audio/page-turn.mp3',
   },
 
+  /** Attribution lines for natural bird recordings from xeno-canto.org (to be filled in with recordist & XC number). */
+  audioAttribution: {
+    crowCaw:
+      'Crow caw recording (crow-caw.mp3): Recordist [Recordist Name TBD], xeno-canto.org catalog number [XC______].',
+    kiskadeeCall:
+      'Great Kiskadee call recording (kiskadee-call.mp3): Recordist [Recordist Name TBD], xeno-canto.org catalog number [XC______].',
+  },
+
   /** Cached Nano Banana 2.1 character & creature sprite paths in `/public/art/`. */
   art: {
     librarian: '/art/librarian-aurelius.png',
+    crow: '/art/crow.png',
     creatures: {
       imp: '/art/creature-imp.png',
       goblin: '/art/creature-goblin.png',

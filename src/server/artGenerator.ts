@@ -101,6 +101,11 @@ export function getSpriteAssetSpecs(): SpriteAssetSpec[] {
       publicRelativePath: APP_CONFIG.art.npcs.archmage,
       prompt: `Original character illustration of a Grand Vaulted Hall Master Chronicler: a venerable, wise chief archivist in ornate gilded ivory and gold ceremonial robes, holding a golden quill and a grand illuminated codex. ${SHARED_STYLE_SUFFIX}`,
     },
+    {
+      id: 'crow',
+      publicRelativePath: APP_CONFIG.art.crow,
+      prompt: `Original Victorian storybook illustration of an ominous gothic library crow with glossy midnight-black and iridescent indigo feathers, expressive watchful amber eyes, and slightly spread wings as if perching or taking flight. ${SHARED_STYLE_SUFFIX}`,
+    },
   ];
 }
 
