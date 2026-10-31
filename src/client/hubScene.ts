@@ -240,12 +240,12 @@ export class HubSceneController {
 
   /**
    * Builds the carved Victorian oak-and-brass Library Exit Door archway near the Librarian's Desk
-   * (`(3.85, 0, -2.1)`) where the student completes the Milestone 4 Exit Debrief & Borrowing Record.
+   * (`(5.4, 0, 1.1)`) where the student completes the Milestone 4 Exit Debrief & Borrowing Record.
    */
   private buildLibraryExitDoor(): void {
     logFunctionCall('HubSceneController.buildLibraryExitDoor', {});
     const doorGroup = new THREE.Group();
-    doorGroup.position.set(3.85, 0, -2.1);
+    doorGroup.position.set(5.4, 0, 1.1);
     doorGroup.lookAt(0, 1.4, 2.2);
 
     const oakMat = new THREE.MeshStandardMaterial({
@@ -275,19 +275,17 @@ export class HubSceneController {
     doorGroup.add(archFrame);
 
     const signTex = createLabelTexture(
-      [
-        '🚪 Library Exit Door — Final Debrief',
-        'Synthesize Your Answer & Claim Borrowing Record',
-      ],
+      ['Exit · Debrief'],
       '#1e140c',
       '#fbbf24',
       '#fef3c7'
     );
     const signMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.35, 0.72),
+      new THREE.PlaneGeometry(1.42, 0.48),
       new THREE.MeshBasicMaterial({ map: signTex })
     );
-    signMesh.position.set(0, 3.35, 0.14);
+    // Mounted directly on the wooden door panel well below the brass arch (y = 2.12 vs arch y = 2.85)
+    signMesh.position.set(0, 2.12, 0.12);
     signMesh.userData = { interactableType: 'exitDoor' };
     doorGroup.add(signMesh);
 

@@ -30,7 +30,104 @@ export interface BookPlacement {
 }
 
 /**
+ * Fits a single logical line into `maxWidth` by shrinking its font size using `ctx.measureText`,
+ * wrapping into at most 2 balanced lines if still too wide.
+ *
+ * @param ctx - 2D canvas context used for text measurement.
+ * @param rawText - Input line string.
+ * @param isPrimary - Whether this is the primary header line.
+ * @param maxWidth - Maximum allowed pixel width (`boardWidth - padding`).
+ * @returns Fitted 1–2 lines along with their font size and weight prefix.
+ */
+function fitSignLine(
+  ctx: CanvasRenderingContext2D,
+  rawText: string,
+  isPrimary: boolean,
+  maxWidth: number
+): { lines: string[]; fontSize: number; weight: string } {
+  const clean = rawText.trim();
+  const weight = isPrimary ? 'bold ' : '';
+  const startSize = isPrimary ? 36 : 26;
+  const minSingleLineSize = isPrimary ? 21 : 17;
+  const minWrappedSize = 13;
+
+  for (let size = startSize; size >= minSingleLineSize; size -= 1) {
+    ctx.font = `${weight}${size}px Georgia, serif`;
+    if (ctx.measureText(clean).width <= maxWidth) {
+      return { lines: [clean], fontSize: size, weight };
+    }
+  }
+
+  // Wrap to max 2 lines using balanced word split, then shrink font until both lines fit
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length <= 1) {
+    let size = minSingleLineSize;
+    while (size > minWrappedSize) {
+      ctx.font = `${weight}${size}px Georgia, serif`;
+      if (ctx.measureText(clean).width <= maxWidth) {
+        break;
+      }
+      size -= 1;
+    }
+    return {
+      lines: [ellipsizeToWidth(ctx, clean, maxWidth)],
+      fontSize: size,
+      weight,
+    };
+  }
+
+  for (let size = minSingleLineSize; size >= minWrappedSize; size -= 1) {
+    ctx.font = `${weight}${size}px Georgia, serif`;
+    let bestSplit = 1;
+    let bestMaxWidth = Infinity;
+    for (let k = 1; k < words.length; k += 1) {
+      const l1 = words.slice(0, k).join(' ');
+      const l2 = words.slice(k).join(' ');
+      const w = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width);
+      if (w < bestMaxWidth) {
+        bestMaxWidth = w;
+        bestSplit = k;
+      }
+    }
+    const line1 = words.slice(0, bestSplit).join(' ');
+    const line2 = words.slice(bestSplit).join(' ');
+    if (bestMaxWidth <= maxWidth || size === minWrappedSize) {
+      return {
+        lines: [
+          ellipsizeToWidth(ctx, line1, maxWidth),
+          ellipsizeToWidth(ctx, line2, maxWidth),
+        ],
+        fontSize: size,
+        weight,
+      };
+    }
+  }
+
+  return { lines: [clean], fontSize: minWrappedSize, weight };
+}
+
+/**
+ * Ensures a single line never exceeds `maxWidth` pixels by trimming with an ellipsis if needed.
+ */
+function ellipsizeToWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string {
+  if (ctx.measureText(text).width <= maxWidth) {
+    return text;
+  }
+  let trimmed = text;
+  while (trimmed.length > 1 && ctx.measureText(`${trimmed}…`).width > maxWidth) {
+    trimmed = trimmed.slice(0, -1).trimEnd();
+  }
+  return `${trimmed}…`;
+}
+
+/**
  * Creates a canvas-backed `THREE.CanvasTexture` displaying crisp Victorian signage or badge labels.
+ * Automatically measures each line with `ctx.measureText`, shrinks the font to fit within the board
+ * width minus padding, and wraps to at most 2 lines if still too long.
  *
  * @param lines - Lines of text to render onto the label canvas.
  * @param bgColor - CSS background fill colour.
@@ -57,16 +154,40 @@ export function createLabelTexture(
   ctx.lineWidth = 8;
   ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
 
+  const paddingX = 30;
+  const maxWidth = canvas.width - paddingX * 2;
+
+  const renderedRows: Array<{ text: string; fontSize: number; weight: string }> = [];
+  lines
+    .filter((l) => l && l.trim().length > 0)
+    .forEach((line, idx) => {
+      const fitted = fitSignLine(ctx, line, idx === 0, maxWidth);
+      for (const subLine of fitted.lines) {
+        renderedRows.push({
+          text: subLine,
+          fontSize: fitted.fontSize,
+          weight: fitted.weight,
+        });
+      }
+    });
+
+  // Vertically center all rendered rows within the board height
+  const lineGap = 10;
+  const totalTextHeight =
+    renderedRows.reduce((acc, r) => acc + r.fontSize, 0) +
+    Math.max(0, renderedRows.length - 1) * lineGap;
+  let currentY = (canvas.height - totalTextHeight) / 2;
+
   ctx.fillStyle = textColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  lines.forEach((line, idx) => {
-    const fontSize = idx === 0 ? 34 : 24;
-    ctx.font = `${idx === 0 ? 'bold ' : ''}${fontSize}px Georgia, serif`;
-    const y = (canvas.height / (lines.length + 1)) * (idx + 1);
-    ctx.fillText(line.slice(0, 36), canvas.width / 2, y);
-  });
+  for (const row of renderedRows) {
+    ctx.font = `${row.weight}${row.fontSize}px Georgia, serif`;
+    const centerY = currentY + row.fontSize / 2;
+    ctx.fillText(row.text, canvas.width / 2, centerY);
+    currentY += row.fontSize + lineGap;
+  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -137,13 +258,13 @@ export function buildLibrarianDesk(scene: THREE.Scene): THREE.Group {
 
   // Floating nameplate above Librarian
   const signTex = createLabelTexture(
-    ['Aurelius Finch — Head Librarian', 'Click to Pose Research Question'],
+    ['Aurelius Finch', 'Head Librarian'],
     '#1f140e',
     '#d4af37',
     '#fde68a'
   );
   const signMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.2, 0.72),
+    new THREE.PlaneGeometry(1.9, 0.68),
     new THREE.MeshBasicMaterial({ map: signTex })
   );
   signMesh.position.set(0, 2.65, 0);
@@ -232,14 +353,17 @@ export function buildThemedShelvesAndBooks(
     }
 
     // Ornate large top header sign with Theme Name (only aisle signs in 3D; book details live in hover card)
+    const shortTheme =
+      themeName.length > 24 ? `${themeName.slice(0, 23).trimEnd()}…` : themeName;
+    const sourceCountLabel = `${themeSources.length} ${themeSources.length === 1 ? 'Source' : 'Sources'}`;
     const aisleSignTex = createLabelTexture(
-      [`Aisle ${themeIdx}: ${themeName}`, `${themeSources.length} Verified Source(s)`],
+      [`Aisle ${themeIdx} · ${shortTheme}`, sourceCountLabel],
       '#23140b',
       '#d4af37',
       '#fef08a'
     );
     const aisleSign = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.5, 0.92),
+      new THREE.PlaneGeometry(3.4, 0.9),
       new THREE.MeshBasicMaterial({ map: aisleSignTex })
     );
     aisleSign.position.set(0, 4.22, 0.22);
