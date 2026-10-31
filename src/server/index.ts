@@ -20,6 +20,7 @@ import express from 'express';
 import path from 'node:path';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
+import { gradeExitDebrief } from './debriefGrader';
 import { gradeExitGateSubmission } from './exitGateGrader';
 import { getGenAiClient } from './genaiClient';
 import { executeResearchPipeline } from './researchPipeline';
@@ -152,6 +153,34 @@ app.post(APP_CONFIG.endpoints.exitGrade, async (req, res) => {
       studentAnswer: String(studentAnswer ?? ''),
       connected: Boolean(connected),
       sections: Array.isArray(sections) ? sections : undefined,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+/**
+ * Exit Debrief & Claim Verification endpoint (`POST /api/debrief-grade`).
+ * Evaluates the student's final synthesis at the Library Exit Door against shelved sources,
+ * flagging unsupported or overstated claims (which spawn mischievous Elves) and suggesting next reads.
+ */
+app.post(APP_CONFIG.endpoints.debriefGrade, async (req, res) => {
+  const { question, transcript, sources, visitedSourceIds } = req.body ?? {};
+  logFunctionCall('POST /api/debrief-grade', {
+    question,
+    transcriptLength: typeof transcript === 'string' ? transcript.length : 0,
+    sourceCount: Array.isArray(sources) ? sources.length : 0,
+  });
+
+  try {
+    const result = await gradeExitDebrief({
+      question: String(question ?? APP_CONFIG.seedQuestion),
+      transcript: String(transcript ?? ''),
+      sources: Array.isArray(sources) ? sources : [],
+      visitedSourceIds: Array.isArray(visitedSourceIds) ? visitedSourceIds : [],
     });
     res.json(result);
   } catch (err) {

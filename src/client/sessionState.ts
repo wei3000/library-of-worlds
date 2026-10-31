@@ -15,12 +15,14 @@
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type {
+  ClaimStatus,
   ExitAttempt,
   MisconceptionRecord,
   PerSourceLog,
   QuoteToken,
   SessionLog,
   Source,
+  TakeawayClaim,
 } from '../shared/types';
 import { getSampleSources } from './sampleData';
 
@@ -459,6 +461,92 @@ class SessionStore {
     }
     log.attempts.push(attempt);
     this.notify();
+  }
+
+  /**
+   * Records the student's final Exit Debrief synthesis, verified `TakeawayClaim[]` items,
+   * and `suggestedNextReads` for the Borrowing Record PDF.
+   *
+   * @param transcript - Student's synthesis text.
+   * @param claims - Extracted and verified `TakeawayClaim[]` list.
+   * @param suggestedNextReads - Optional 2-3 suggested next reads.
+   */
+  public recordTakeawayDebrief(
+    transcript: string,
+    claims: TakeawayClaim[],
+    suggestedNextReads?: Array<{ title: string; reason: string; url?: string }>
+  ): void {
+    logFunctionCall('SessionStore.recordTakeawayDebrief', {
+      transcriptLength: transcript.length,
+      claimCount: claims.length,
+      nextReadCount: suggestedNextReads?.length ?? 0,
+    });
+    this.session.takeaway = {
+      transcript,
+      claims: claims.map((c, idx) => ({
+        ...c,
+        id: c.id || `claim-${idx + 1}`,
+      })),
+    };
+    if (suggestedNextReads && suggestedNextReads.length > 0) {
+      this.session.suggestedNextReads = suggestedNextReads;
+    }
+    this.notify();
+  }
+
+  /**
+   * Resolves a mischievous Elf's flagged (`unsupported` or `overstated`) claim by either:
+   * 1. Revising the claim text and marking it `'supported'`,
+   * 2. Attaching a collected `QuoteToken` (`supportedBy: sourceId`), or
+   * 3. Dismissing the claim (`status: 'dismissed'`) to shoo the Elf away.
+   *
+   * @param claimId - ID of the `TakeawayClaim` to update.
+   * @param resolution - Updated status, optional revised text, supporting source ID, and explanation.
+   */
+  public resolveTakeawayClaim(
+    claimId: string,
+    resolution: {
+      status: ClaimStatus;
+      revisedText?: string;
+      supportedBy?: string;
+      explanation?: string;
+    }
+  ): void {
+    logFunctionCall('SessionStore.resolveTakeawayClaim', {
+      claimId,
+      status: resolution.status,
+      supportedBy: resolution.supportedBy,
+    });
+    const claim = this.session.takeaway.claims.find((c) => c.id === claimId);
+    if (!claim) {
+      return;
+    }
+    claim.status = resolution.status;
+    if (resolution.revisedText !== undefined && resolution.revisedText.trim().length > 0) {
+      claim.text = resolution.revisedText.trim();
+    }
+    if (resolution.supportedBy !== undefined) {
+      claim.supportedBy = resolution.supportedBy;
+    }
+    if (resolution.explanation !== undefined) {
+      claim.explanation = resolution.explanation;
+    }
+    this.notify();
+  }
+
+  /**
+   * Returns all deduplicated `QuoteToken`s collected across all shelved sources in the session,
+   * paired with their source title for the Exit Debrief Elf resolution picker.
+   */
+  public getAllCollectedTokens(): Array<{ token: QuoteToken; sourceTitle: string }> {
+    const out: Array<{ token: QuoteToken; sourceTitle: string }> = [];
+    for (const src of this.session.sources) {
+      const tokens = this.getCollectedTokensForSource(src.id);
+      for (const token of tokens) {
+        out.push({ token, sourceTitle: src.title });
+      }
+    }
+    return out;
   }
 }
 

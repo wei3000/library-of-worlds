@@ -34,8 +34,13 @@
       </div>
 
       <div class="hud-stats">
-        <div id="ghost-citation-badge" class="stat-pill ghost-pill" title="Unresolvable / hallucinated citations discarded by Verifier">
-          👻 Ghost Citations Filtered: <strong id="ghost-count-val">2</strong>
+        <div style="display:flex;gap:0.45rem;align-items:center;">
+          <div id="ghost-citation-badge" class="stat-pill ghost-pill" title="Unresolvable / hallucinated citations discarded by Verifier">
+            👻 Ghost Citations Filtered: <strong id="ghost-count-val">2</strong>
+          </div>
+          <button id="open-debrief-btn" class="btn-primary" style="padding:0.28rem 0.7rem;font-size:0.78rem;" title="Synthesize your answer with Head Librarian Aurelius Finch & print your Borrowing Record PDF">
+            🚪 Exit Debrief &amp; PDF
+          </button>
         </div>
         <div id="mode-indicator" class="stat-pill">📍 Victorian Hub (WASD + Drag)</div>
       </div>
@@ -69,6 +74,8 @@
     <div id="fulltext-modal" class="modal-backdrop hidden"></div>
     <div id="notes-scroll-modal" class="modal-backdrop hidden"></div>
     <div id="exit-gate-modal" class="modal-backdrop hidden"></div>
+    <div id="debrief-modal" class="modal-backdrop hidden"></div>
+    <div id="borrowing-record-modal" class="modal-backdrop hidden"></div>
 
     <script type="module" src="/src/client/main.ts"></script>
   </body>

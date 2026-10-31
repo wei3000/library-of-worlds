@@ -3,28 +3,38 @@
  * @description Three.js 3D Victorian Library Hub controller for "The Library of Worlds".
  * Implements first-person WASD / Arrow-key walking + mouse-drag look-around, warm Victorian
  * chandeliers, volumetric fog, raycasted book hover ("Why this tier" tooltip), and click
- * handlers for entering a Book World or speaking with the Head Librarian.
+ * handlers for entering a Book World, speaking with the Head Librarian, or approaching the
+ * Library Exit Door for the Milestone 4 Exit Debrief & Borrowing Record.
+ *
+ * Also renders mischievous Library Elf billboard sprites (`/art/elf.png`) holding parchment
+ * claim banners whenever the student's takeaway synthesis contains `unsupported` or `overstated`
+ * claims. Clicking an Elf opens the Exit Debrief to revise, attach a quote token, or dismiss
+ * the claim and shoo the Elf away.
  *
  * Use cases:
  * 1. Exploring the themed aisles and inspecting metadata-driven source tiers.
  * 2. Clicking a book to transition into its 360° Book World (`worldScene.ts`).
  * 3. Clicking the Librarian to ask or refine the student's research question.
+ * 4. Clicking the Library Exit Door (or a mischievous Elf) for the final Debrief & Borrowing Record PDF.
  */
 
 import * as THREE from 'three';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
-import type { Source } from '../shared/types';
+import type { Source, TakeawayClaim } from '../shared/types';
 import {
   buildLibrarianDesk,
   buildThemedShelvesAndBooks,
+  createLabelTexture,
   type BookPlacement,
 } from './bookShelfBuilder';
 import { buildLanternPath } from './lanternPath';
+import { createBillboardSprite } from './spriteLoader';
 
 export interface HubCallbacks {
   onSelectBook: (sourceId: string) => void;
   onSelectLibrarian: () => void;
+  onSelectExitDoor: (focusClaimId?: string) => void;
   onHoverSource: (source: Source | null, screenX: number, screenY: number) => void;
 }
 
@@ -32,6 +42,7 @@ export class HubSceneController {
   public readonly scene: THREE.Scene;
   public readonly camera: THREE.PerspectiveCamera;
   private dynamicGroup: THREE.Group;
+  private elfGroup: THREE.Group;
   private placements: BookPlacement[] = [];
   private flickeringLights: Array<{
     light: THREE.PointLight;
@@ -67,8 +78,12 @@ export class HubSceneController {
     this.dynamicGroup = new THREE.Group();
     this.scene.add(this.dynamicGroup);
 
+    this.elfGroup = new THREE.Group();
+    this.scene.add(this.elfGroup);
+
     this.buildStaticLibraryArchitecture();
     buildLibrarianDesk(this.scene);
+    this.buildLibraryExitDoor();
   }
 
   /**
@@ -151,7 +166,6 @@ export class HubSceneController {
       pillar.position.set(px, 3.25, pz);
       this.scene.add(pillar);
 
-      // Wall/pillar candle sconce facing inward toward the center of the room
       const dirToCenter = new THREE.Vector2(-px, -3.5 - pz).normalize();
       const sconceX = px + dirToCenter.x * 0.62;
       const sconceZ = pz + dirToCenter.y * 0.62;
@@ -225,6 +239,62 @@ export class HubSceneController {
   }
 
   /**
+   * Builds the carved Victorian oak-and-brass Library Exit Door archway near the Librarian's Desk
+   * (`(3.85, 0, -2.1)`) where the student completes the Milestone 4 Exit Debrief & Borrowing Record.
+   */
+  private buildLibraryExitDoor(): void {
+    logFunctionCall('HubSceneController.buildLibraryExitDoor', {});
+    const doorGroup = new THREE.Group();
+    doorGroup.position.set(3.85, 0, -2.1);
+    doorGroup.lookAt(0, 1.4, 2.2);
+
+    const oakMat = new THREE.MeshStandardMaterial({
+      color: 0x3b1f10,
+      roughness: 0.55,
+      metalness: 0.15,
+    });
+    const brassMat = new THREE.MeshStandardMaterial({
+      color: 0xd4af37,
+      emissive: 0xb45309,
+      emissiveIntensity: 0.28,
+      metalness: 0.7,
+      roughness: 0.25,
+    });
+
+    const doorPanel = new THREE.Mesh(new THREE.BoxGeometry(1.75, 2.9, 0.18), oakMat);
+    doorPanel.position.y = 1.45;
+    doorPanel.userData = { interactableType: 'exitDoor' };
+    doorGroup.add(doorPanel);
+
+    const archFrame = new THREE.Mesh(
+      new THREE.TorusGeometry(0.95, 0.1, 10, 28, Math.PI),
+      brassMat
+    );
+    archFrame.position.set(0, 2.85, 0.06);
+    archFrame.userData = { interactableType: 'exitDoor' };
+    doorGroup.add(archFrame);
+
+    const signTex = createLabelTexture(
+      [
+        '🚪 Library Exit Door — Final Debrief',
+        'Synthesize Your Answer & Claim Borrowing Record',
+      ],
+      '#1e140c',
+      '#fbbf24',
+      '#fef3c7'
+    );
+    const signMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.35, 0.72),
+      new THREE.MeshBasicMaterial({ map: signTex })
+    );
+    signMesh.position.set(0, 3.35, 0.14);
+    signMesh.userData = { interactableType: 'exitDoor' };
+    doorGroup.add(signMesh);
+
+    this.scene.add(doorGroup);
+  }
+
+  /**
    * Rebuilds the dynamic bookshelves and glowing Lantern Path whenever sources or completion states update.
    *
    * @param sources - Current verified `Source[]`.
@@ -245,7 +315,6 @@ export class HubSceneController {
       this.dynamicGroup.remove(this.dynamicGroup.children[0]);
     }
 
-    // Create a temporary sub-scene proxy by adding shelves & path into dynamicGroup
     const tempScene = new THREE.Scene();
     this.placements = buildThemedShelvesAndBooks(tempScene, sources, readingPath, completedMap);
     buildLanternPath(tempScene, this.placements, completedMap);
@@ -256,9 +325,74 @@ export class HubSceneController {
   }
 
   /**
-   * Handles keydown events for WASD / Arrow movement.
+   * Spawns mischievous Library Elf billboard sprites (`/art/elf.png`) holding parchment banners
+   * in front of the Exit Door for any `unsupported` or `overstated` claims in the student's takeaway.
    *
-   * @param code - KeyboardEvent.code string.
+   * @param claims - Current `TakeawayClaim[]` list from `session.takeaway.claims`.
+   */
+  public populateElves(claims: TakeawayClaim[]): void {
+    const flagged = claims.filter(
+      (c) => c.status === 'unsupported' || c.status === 'overstated'
+    );
+    logFunctionCall('HubSceneController.populateElves', {
+      flaggedElfCount: flagged.length,
+    });
+
+    while (this.elfGroup.children.length > 0) {
+      this.elfGroup.remove(this.elfGroup.children[0]);
+    }
+
+    flagged.forEach((claim, idx) => {
+      const elfContainer = new THREE.Group();
+      const spreadX = 1.9 + idx * 1.35;
+      const spreadZ = -0.8 + (idx % 2) * 0.75;
+      elfContainer.position.set(spreadX, 0, spreadZ);
+      elfContainer.lookAt(0, 1.3, 2.2);
+      elfContainer.userData = {
+        baseY: 0,
+        phase: idx * 1.7,
+        claimId: claim.id,
+      };
+
+      const elfSprite = createBillboardSprite({
+        url: APP_CONFIG.art.elf,
+        width: 1.05,
+        height: 1.32,
+        fallbackColorHex: 0xef4444,
+        userData: { interactableType: 'elf', claimId: claim.id },
+      });
+      elfSprite.position.set(0, 0.1, 0);
+      elfContainer.add(elfSprite);
+
+      // Parchment banner held above the mischievous Elf with the flagged claim snippet
+      const badgeLabel =
+        claim.status === 'overstated'
+          ? '🧝 Mischievous Elf: OVERSTATED CLAIM!'
+          : '🧝 Mischievous Elf: UNSUPPORTED CLAIM!';
+      const bannerTex = createLabelTexture(
+        [
+          badgeLabel,
+          `"${claim.text.slice(0, 44)}${claim.text.length > 44 ? '…' : ''}"`,
+          'Click Elf to Revise, Cite Token, or Shoo Away',
+        ],
+        '#3b0a0a',
+        '#f87171',
+        '#fef2f2'
+      );
+      const banner = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.95, 0.72),
+        new THREE.MeshBasicMaterial({ map: bannerTex })
+      );
+      banner.position.set(0, 1.72, 0.08);
+      banner.userData = { interactableType: 'elf', claimId: claim.id };
+      elfContainer.add(banner);
+
+      this.elfGroup.add(elfContainer);
+    });
+  }
+
+  /**
+   * Handles keydown events for WASD / Arrow movement.
    */
   public onKeyDown(code: string): void {
     this.keysPressed.add(code);
@@ -266,8 +400,6 @@ export class HubSceneController {
 
   /**
    * Handles keyup events for WASD / Arrow movement.
-   *
-   * @param code - KeyboardEvent.code string.
    */
   public onKeyUp(code: string): void {
     this.keysPressed.delete(code);
@@ -275,9 +407,6 @@ export class HubSceneController {
 
   /**
    * Begins mouse-drag look-around in the Hub.
-   *
-   * @param clientX - Mouse X coordinate.
-   * @param clientY - Mouse Y coordinate.
    */
   public onPointerDown(clientX: number, clientY: number): void {
     this.isDragging = true;
@@ -287,10 +416,6 @@ export class HubSceneController {
 
   /**
    * Updates camera yaw/pitch when dragging, or performs hover raycasting against books on shelves.
-   *
-   * @param clientX - Mouse X coordinate.
-   * @param clientY - Mouse Y coordinate.
-   * @param canvasRect - Bounding client rect of the WebGL canvas.
    */
   public onPointerMove(clientX: number, clientY: number, canvasRect: DOMRect): void {
     if (this.isDragging) {
@@ -318,11 +443,8 @@ export class HubSceneController {
   }
 
   /**
-   * Completes pointer interaction; if it was a click (minimal drag), triggers book or librarian selection.
-   *
-   * @param clientX - Mouse X coordinate.
-   * @param clientY - Mouse Y coordinate.
-   * @param canvasRect - Bounding client rect of the WebGL canvas.
+   * Completes pointer interaction; if it was a click (minimal drag), triggers book, librarian,
+   * exit door, or mischievous elf selection.
    */
   public onPointerUp(clientX: number, clientY: number, canvasRect: DOMRect): void {
     const wasClick = this.isDragging && this.dragDistance < 6;
@@ -339,22 +461,21 @@ export class HubSceneController {
       this.callbacks.onSelectBook(hit.sourceId);
     } else if (hit.interactableType === 'librarian') {
       this.callbacks.onSelectLibrarian();
+    } else if (hit.interactableType === 'exitDoor') {
+      this.callbacks.onSelectExitDoor();
+    } else if (hit.interactableType === 'elf') {
+      this.callbacks.onSelectExitDoor(hit.claimId);
     }
   }
 
   /**
    * Raycasts into the Hub scene from screen coordinates and returns any interactable metadata.
-   *
-   * @param clientX - Screen X coordinate.
-   * @param clientY - Screen Y coordinate.
-   * @param rect - Canvas bounding rectangle.
-   * @returns Metadata of the hit object or `null`.
    */
   private raycastFromScreen(
     clientX: number,
     clientY: number,
     rect: DOMRect
-  ): { interactableType: string; sourceId?: string } | null {
+  ): { interactableType: string; sourceId?: string; claimId?: string } | null {
     const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1;
     const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
@@ -369,6 +490,7 @@ export class HubSceneController {
         return {
           interactableType: data.interactableType,
           sourceId: data.sourceId,
+          claimId: data.claimId,
         };
       }
     }
@@ -384,10 +506,8 @@ export class HubSceneController {
   }
 
   /**
-   * Per-frame update loop handling gentle candle/lamp light flicker and WASD walking.
-   *
-   * @param deltaSeconds - Frame delta time in seconds.
-   * @param movementEnabled - False when typing in an input/textarea.
+   * Per-frame update loop handling gentle candle/lamp light flicker, mischievous Elf bouncing,
+   * and WASD walking.
    */
   public update(deltaSeconds: number, movementEnabled: boolean): void {
     this.elapsedTime += deltaSeconds;
@@ -402,6 +522,13 @@ export class HubSceneController {
         item.flameMesh.scale.set(s, s * 1.15, s);
       }
     }
+
+    // Playful hop animation for mischievous Elves holding unsupported/overstated claim banners
+    this.elfGroup.children.forEach((elf) => {
+      const phase = (elf.userData?.phase as number) ?? 0;
+      const hop = Math.abs(Math.sin(this.elapsedTime * 4.2 + phase)) * 0.18;
+      elf.position.y = hop;
+    });
 
     if (!movementEnabled) {
       return;
@@ -433,7 +560,6 @@ export class HubSceneController {
     if (velocity.lengthSq() > 0) {
       velocity.normalize().multiplyScalar(APP_CONFIG.hub.moveSpeed * deltaSeconds);
       this.camera.position.add(velocity);
-      // Clamp player within library bounds
       this.camera.position.x = Math.max(-10, Math.min(10, this.camera.position.x));
       this.camera.position.z = Math.max(-11, Math.min(6, this.camera.position.z));
       this.camera.position.y = APP_CONFIG.hub.eyeHeight;

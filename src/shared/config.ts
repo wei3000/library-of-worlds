@@ -232,6 +232,7 @@ export const APP_CONFIG = {
   art: {
     librarian: '/art/librarian-aurelius.png',
     crow: '/art/crow.png',
+    elf: '/art/elf.png',
     creatures: {
       imp: '/art/creature-imp.png',
       goblin: '/art/creature-goblin.png',

@@ -106,6 +106,11 @@ export function getSpriteAssetSpecs(): SpriteAssetSpec[] {
       publicRelativePath: APP_CONFIG.art.crow,
       prompt: `Original Victorian storybook illustration of an ominous gothic library crow with glossy midnight-black and iridescent indigo feathers, expressive watchful amber eyes, and slightly spread wings as if perching or taking flight. ${SHARED_STYLE_SUFFIX}`,
     },
+    {
+      id: 'elf',
+      publicRelativePath: APP_CONFIG.art.elf,
+      prompt: `Original Victorian storybook illustration of a mischievous whimsical library elf sprite with pointed ears, a cheeky grin, a tilted crimson-and-brass jester-scholar cap, holding up a small unrolled parchment scroll banner and a red ink quill. ${SHARED_STYLE_SUFFIX}`,
+    },
   ];
 }
 

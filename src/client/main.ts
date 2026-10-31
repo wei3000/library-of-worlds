@@ -19,6 +19,8 @@ import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import type { Source } from '../shared/types';
 import { audioManager } from './audioManager';
+import { renderBorrowingRecordModal } from './borrowingRecordModal';
+import { renderDebriefModal } from './debriefModal';
 import { renderExitGateUi } from './exitGateUi';
 import { renderFullTextModal } from './fullTextModal';
 import { HubSceneController } from './hubScene';
@@ -46,6 +48,8 @@ const npcDialogueModal = document.getElementById('npc-dialogue-modal') as HTMLEl
 const fulltextModal = document.getElementById('fulltext-modal') as HTMLElement;
 const notesScrollModal = document.getElementById('notes-scroll-modal') as HTMLElement;
 const exitGateModal = document.getElementById('exit-gate-modal') as HTMLElement;
+const debriefModal = document.getElementById('debrief-modal') as HTMLElement;
+const borrowingRecordModal = document.getElementById('borrowing-record-modal') as HTMLElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -100,6 +104,40 @@ function openFullTextViewer(highlightQuoteId?: string): void {
   renderFullTextModal(fulltextModal, activeSource, highlightQuoteId, () => {});
 }
 
+/**
+ * Opens the Printable Borrowing Record modal (`window.print()` PDF).
+ */
+function openBorrowingRecord(): void {
+  logFunctionCall('openBorrowingRecord', {});
+  renderBorrowingRecordModal(borrowingRecordModal, () => {
+    openExitDebrief();
+  });
+}
+
+/**
+ * Opens the Library Exit Debrief & Mischievous Elf Claim Verifier modal.
+ *
+ * @param focusClaimId - Optional specific Elf claim ID clicked in the 3D Hub.
+ */
+function openExitDebrief(focusClaimId?: string): void {
+  logFunctionCall('openExitDebrief', { focusClaimId });
+  if (sessionStore.getActiveSource()) {
+    sessionStore.leaveBookWorld();
+  }
+  renderDebriefModal(
+    debriefModal,
+    {
+      onClaimsUpdated: (claims) => {
+        hubController.populateElves(claims);
+      },
+      onOpenBorrowingRecord: () => {
+        openBorrowingRecord();
+      },
+    },
+    focusClaimId
+  );
+}
+
 const hubController = new HubSceneController({
   onSelectBook: (sourceId) => {
     logFunctionCall('onSelectBook', { sourceId });
@@ -109,6 +147,9 @@ const hubController = new HubSceneController({
     logFunctionCall('onSelectLibrarian', {});
     questionInput.focus();
     questionInput.select();
+  },
+  onSelectExitDoor: (claimId) => {
+    openExitDebrief(claimId);
   },
   onHoverSource: handleHoverSource,
 });
@@ -204,6 +245,7 @@ function syncUiAndScenes(): void {
     satchelContainer.classList.add('hidden');
     npcDialogueModal.classList.add('hidden');
     hubController.populateSources(session.sources, session.path, completedMap);
+    hubController.populateElves(session.takeaway.claims);
   } else {
     // Player is inside a 360° Book World
     const tierInfo = APP_CONFIG.tiers[activeSource.tier];
@@ -268,6 +310,10 @@ document.getElementById('open-exitgate-btn')?.addEventListener('click', () => {
 
 document.getElementById('back-to-hub-btn')?.addEventListener('click', () => {
   sessionStore.leaveBookWorld();
+});
+
+document.getElementById('open-debrief-btn')?.addEventListener('click', () => {
+  openExitDebrief();
 });
 
 function triggerLibrarianSearch(forceOverride?: boolean): void {

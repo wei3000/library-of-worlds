@@ -35,20 +35,26 @@ npm run dev
   - **Hover over a Book**: Inspect its Tier (`Imp`, `Goblin`, `Apprentice`, `Wizard`, `Archmage`), metadata tier reasons, and one-line summary
   - **Click a Book**: Step inside its 360° Book World
   - **Click the Librarian**: Ask or update your research question
+  - **Click the Library Exit Door (or `"🚪 Exit Debrief & PDF"` button)**: Answer the Librarian's final synthesis question, verify claims against sources, resolve any mischievous Elves, and print/save your **Borrowing Record PDF**
 - **Inside a 360° Book World**:
   - **Mouse Drag**: Look 360° around the scene from the centre
   - **Click an NPC (`1`, `2`, `3`...)**: Hear their in-character section explanation, ask follow-up questions (*"What do you mean?"*, *"Why should I believe you?"*, *"Read me the actual line"*), and collect verbatim **Quote Tokens**
   - **Click the Full-Text Object (or HUD button)**: Open the full extracted source text; clicking any Quote Token in your Satchel scrolls directly to and highlights that exact passage
   - **Notes Scroll Button**: Jot down notes or insert collected Quote Tokens
-  - **Click the Librarian at the Exit Gate**: Answer the exit comprehension question in your own words and attach the supporting Quote Token to complete the book and return to the Hub
+  - **Click the Librarian at the Exit Gate**: Answer the exit comprehension question in your own words; on passing, the Librarian auto-cites the best supporting verbatim quote (`📜 See in text`), adds it to your Satchel, and opens the portal back to the Hub
 
 ---
 
-## Milestone Status (Milestone 3)
+## Milestone Status (Milestone 4)
 
 ### Working Now
+- **Milestone 4 — Exit Gate Auto-Citation, Crow Menace Audio/Visuals, Exit Debrief & Printable Borrowing Record PDF**:
+  - **Exit Gate Auto-Cites Evidence (`exitGateGrader.ts`, `exitGateUi.ts`)**: Students answer in their own words (no manual quote picker required). On `pass` or `partial`, the grader returns the single best supporting verbatim quote (validated via `isExactSubstring`), displays `"Quite right. As the text says: '…'"` with a `"📜 See in text"` button that opens the Full-Text viewer highlighted at that passage, and adds the quote to the Satchel automatically (deduplicated by ID and text).
+  - **Crow Menace Audio + Visual Escalation (`audioManager.ts`, `worldScene.ts`, `crow.png`)**: Wires real `/public/audio/crow-caw.mp3` and `/public/audio/kiskadee-call.mp3` recordings with automatic WebAudio synthesis fallback (bandpass-filtered white noise burst with falling pitch for crow caw; 3-note whistle for kiskadee call). Escalates per wrong answer: Level 1 lands a crow sprite on a wooden perch; Level 2 adds a second circling crow, looping distant caws, and dimmer light; Level 3 adds three circling crows, a crow perched on the Librarian's shoulder, overlapping caws, and thick desaturated fog. On pass, the crows take off and fly away, caws stop, the Great Kiskadee calls, and warm light returns.
+  - **Library Exit Debrief & Mischievous Elf Claim Verifier (`debriefGrader.ts`, `debriefModal.ts`, `hubScene.ts`, `elf.png`)**: Clicking the 3D Library Exit Door or top HUD `"🚪 Exit Debrief & PDF"` button prompts the student's final synthesis. `POST /api/debrief-grade` uses `gemini-4-argon` to decompose the synthesis into `TakeawayClaim[]` items (`supported`, `unsupported`, `overstated`). Any `unsupported` or `overstated` claim spawns a mischievous Elf sprite (`public/art/elf.png`) in the 3D Hub and Debrief modal until the student revises the claim, anchors it to a source/quote token, or shoos the Elf away.
+  - **Printable Borrowing Record PDF (`borrowingRecordModal.ts`, `@media print`)**: Clean multi-section printable study record (`🖨️ Print / Save as PDF` via `window.print()`) containing the research question, Ghost Citations blocked, ordered reading path with metadata tier reasons, per-book notes, verbatim quote tokens, Exit Gate answers & auto-cited quotes, resolved misconceptions, max menace reached, verified takeaway claims, suggested next reads, and the xeno-canto audio attribution footer.
 - **Milestone 3 Visuals, Tier World Templates & LLM Exit Gate Grader**:
-  - **Nano Banana Character, Creature & NPC Billboard Sprites (`artGenerator.ts`, `spriteLoader.ts`)**: Consistent Victorian storybook illustrations generated once via `gemini-nano-banana-2.1` and cached in `/public/art/*.png` (Head Librarian Aurelius Finch, 5 tier creatures, and 5 tier NPCs), chroma-keyed on canvas and rendered as camera-facing 3D billboard sprites.
+  - **Nano Banana Character, Creature & NPC Billboard Sprites (`artGenerator.ts`, `spriteLoader.ts`)**: Consistent Victorian storybook illustrations generated once via `gemini-nano-banana-2.1` and cached in `/public/art/*.png` (Head Librarian Aurelius Finch, 5 tier creatures, 5 tier NPCs, Crow, and Mischievous Elf), chroma-keyed on canvas and rendered as camera-facing 3D billboard sprites.
   - **Library Shelf Dressing (`decorativeBooksInstancer.ts`, `bookShelfBuilder.ts`)**: Hundreds of procedural antique leather books via `THREE.InstancedMesh` across all aisle and perimeter wall bookcases, with real `Source` books pulled half-out, glowing in their tier colour, and accompanied by a perched tier creature sprite.
   - **Cosy Victorian Lighting & Readability (`hubScene.ts`)**: `ACESFilmicToneMapping`, warm ambient & hemisphere lighting, warm dusty-gold fog (`0x362716`), flickering candle/lamp point lights on pillars, aisles, and chandeliers, and large readable aisle header signs.
   - **5 Reusable Tier World Templates (`worldTemplates.ts`)**:
@@ -57,7 +63,6 @@ npm run dev
     - `Apprentice`: Candlelit Study + Unrolled Parchment
     - `Wizard`: Tower Observatory (with giant brass telescope & rotating overhead armillary sphere rings) + Carved Stone Tablet
     - `Archmage`: Grand Vaulted Hall (with marble columns & rotating golden halo chandelier) + Illuminated Manuscript on a Lectern
-  - **Gemini 4 Argon LLM Exit Gate Grader (`exitGateGrader.ts`)**: Evaluates the student's written synthesis and presented `QuoteToken` (`pass`, `weak_evidence`, `partial`, `wrong`), returning in-character feedback from Head Librarian Aurelius Finch, glowing NPC section hints, Great Kiskadee bird/chime on success, circling Crows + rising Menace (0–3) on wrong answers, and deferred misconception corrections.
 - **Live Grounded Research Pipeline (`src/server/researchPipeline.ts` — Milestone 2)**:
   - **Research Agent (`researchAgent.ts`)**: Uses `gemini-4-argon` + Google Search grounding (`tools: [{ type: 'google_search' }]`) to propose candidate sources across 3–5 thematic aisles.
   - **Parallel Bibliographic Verifier (`verifier.ts`)**: Verifies all candidates in parallel (10s timeout per external call) against Crossref, arXiv API, Semantic Scholar, and live HTTP resolution. Unresolvable candidates are discarded and tallied as **Ghost Citations**.
@@ -69,7 +74,6 @@ npm run dev
 - **3D Victorian Library Hub & 360° Book Worlds (Milestone 1)**: WASD + mouse-look Hub, glowing Lantern Path, hover tooltips, 360° Book Worlds, NPC dialogue, Satchel, Notes Scroll, and Full-Text viewer with passage highlighting.
 
 ### Stubbed for Upcoming Milestones
-- **Milestone 4**: Hub Exit Debrief with claim verification, mischievous Elves for unsupported claims, and printable Borrowing Record PDF.
 - **Milestone 5**: Gemini Live (`gemini-3.8-live`) bidirectional voice and Gemini TTS (`gemini-3.8-flash-tts`) Voice Design character voices.
 
 ---
