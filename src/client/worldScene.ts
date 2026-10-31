@@ -191,7 +191,7 @@ export class WorldSceneController {
     const gateLabel = createLabelTexture(
       [
         log.completed ? '✓ Exit Gate Open — Great Kiskadee Perched' : '🔒 Exit Gate — Prove Understanding',
-        source.connected ? 'Answer + Present Quote Token' : 'Answer from Abstract to Leave',
+        source.connected ? 'Answer in Your Own Words to Leave' : 'Answer from Abstract to Leave',
       ],
       log.completed ? '#064e3b' : '#261414',
       log.completed ? '#10b981' : '#f59e0b',

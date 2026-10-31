@@ -23,7 +23,7 @@ export type VenueType =
   | 'peer_reviewed'
   | 'survey_review_textbook';
 
-export type ExitGrade = 'pass' | 'weak_evidence' | 'partial' | 'wrong';
+export type ExitGrade = 'pass' | 'partial' | 'wrong';
 
 export type ClaimStatus = 'supported' | 'unsupported' | 'overstated' | 'dismissed';
 
@@ -104,10 +104,14 @@ export interface Source {
 
 export interface ExitAttempt {
   answer: string;
-  presentedQuoteId?: string;
   grade: ExitGrade;
   feedback?: string;
   rephrasedQuestion?: string;
+  supportingQuote?: {
+    id: string;
+    sectionId: string;
+    text: string;
+  };
 }
 
 export interface MisconceptionRecord {

@@ -134,6 +134,9 @@ const worldController = new WorldSceneController({
         },
         () => {
           sessionStore.leaveBookWorld();
+        },
+        (quoteId) => {
+          openFullTextViewer(quoteId);
         }
       );
     }
@@ -210,7 +213,6 @@ function syncUiAndScenes(): void {
     worldTitleBanner.innerHTML = `
       <span class="badge-pill" style="border-color:${tierInfo.cssColor}">${tierInfo.label.toUpperCase()} • ${tierInfo.settingName}</span>
       <strong style="margin-left:0.5rem;">${activeSource.title}</strong>
-      <span class="subtle-text" style="margin-left:0.5rem;">(Menace: ${log.currentMenace}/3)</span>
     `;
 
     satchelContainer.classList.remove('hidden');
@@ -254,6 +256,9 @@ document.getElementById('open-exitgate-btn')?.addEventListener('click', () => {
       },
       () => {
         sessionStore.leaveBookWorld();
+      },
+      (quoteId) => {
+        openFullTextViewer(quoteId);
       }
     );
   }

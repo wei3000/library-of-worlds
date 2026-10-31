@@ -236,7 +236,7 @@ export function ensureExactSubstring(
   });
 
   const cleanCandidate = (candidate ?? '').trim();
-  if (cleanCandidate.length >= 15 && isExactSubstring(cleanCandidate, sectionText)) {
+  if (cleanCandidate.length >= 15 && isExactSubstring(sectionText, cleanCandidate)) {
     return cleanCandidate;
   }
 
@@ -251,7 +251,7 @@ export function ensureExactSubstring(
           ? endPeriod + 1
           : Math.min(sectionText.length, startIdx + Math.min(cleanCandidate.length, 220));
       const sliced = sectionText.slice(startIdx, sliceEnd).trim();
-      if (sliced.length >= 15 && isExactSubstring(sliced, sectionText)) {
+      if (sliced.length >= 15 && isExactSubstring(sectionText, sliced)) {
         return sliced;
       }
     }
@@ -265,7 +265,7 @@ export function ensureExactSubstring(
 
   if (sentences.length > 0) {
     const chosen = sentences[fallbackSentenceIndex % sentences.length];
-    if (isExactSubstring(chosen, sectionText)) {
+    if (isExactSubstring(sectionText, chosen)) {
       return chosen;
     }
   }
@@ -376,12 +376,20 @@ ${chunks
           ? llmSec.quotes.slice(0, 2)
           : [verbatimLine];
 
-      const quoteTokens: QuoteToken[] = rawQuotes.map((qText, qIdx) => ({
-        id: `${sourceId}-qt-${idx + 1}-${qIdx + 1}`,
-        sourceId,
-        sectionId: secId,
-        text: ensureExactSubstring(qText, chunk.text, qIdx),
-      }));
+      const seenTexts = new Set<string>();
+      const quoteTokens: QuoteToken[] = [];
+      rawQuotes.forEach((qText, qIdx) => {
+        const verifiedText = ensureExactSubstring(qText, chunk.text, qIdx);
+        if (!seenTexts.has(verifiedText)) {
+          seenTexts.add(verifiedText);
+          quoteTokens.push({
+            id: `${sourceId}-qt-${idx + 1}-${quoteTokens.length + 1}`,
+            sourceId,
+            sectionId: secId,
+            text: verifiedText,
+          });
+        }
+      });
 
       return {
         id: secId,

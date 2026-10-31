@@ -120,9 +120,9 @@ app.post(APP_CONFIG.endpoints.research, async (req, res) => {
 
 /**
  * Exit Gate grading endpoint (`POST /api/exit-grade`).
- * Evaluates whether the student's answer and presented `QuoteToken` support the source's
- * exit question using the Gemini reasoning model (`gemini-4-argon` with fallback chain).
- * Returns `{ grade, feedback, rephrasedQuestion, hintSectionId, correction, sourceQuote }`.
+ * Evaluates the student's comprehension answer (`pass` / `partial` / `wrong`) using the Gemini
+ * reasoning model (`gemini-4-argon` with fallback chain) and returns the single best supporting
+ * quote on `pass` or `partial` (validated as an exact substring of the section text).
  */
 app.post(APP_CONFIG.endpoints.exitGrade, async (req, res) => {
   const {
@@ -132,15 +132,12 @@ app.post(APP_CONFIG.endpoints.exitGrade, async (req, res) => {
     expectedAnswer,
     supportingQuoteIds,
     studentAnswer,
-    presentedQuoteId,
-    presentedQuoteText,
     connected,
     sections,
   } = req.body ?? {};
   logFunctionCall('POST /api/exit-grade', {
     sourceId,
     question,
-    presentedQuoteId,
     connected,
     studentAnswerLength: typeof studentAnswer === 'string' ? studentAnswer.length : 0,
   });
@@ -153,8 +150,6 @@ app.post(APP_CONFIG.endpoints.exitGrade, async (req, res) => {
       expectedAnswer: String(expectedAnswer ?? ''),
       supportingQuoteIds: Array.isArray(supportingQuoteIds) ? supportingQuoteIds : [],
       studentAnswer: String(studentAnswer ?? ''),
-      presentedQuoteId: typeof presentedQuoteId === 'string' ? presentedQuoteId : undefined,
-      presentedQuoteText: typeof presentedQuoteText === 'string' ? presentedQuoteText : undefined,
       connected: Boolean(connected),
       sections: Array.isArray(sections) ? sections : undefined,
     });

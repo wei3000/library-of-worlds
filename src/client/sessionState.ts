@@ -250,7 +250,8 @@ class SessionStore {
   }
 
   /**
-   * Collects all verbatim `QuoteToken`s from a given section into the student's Satchel.
+   * Collects all verbatim `QuoteToken`s from a given section into the student's Satchel,
+   * deduplicating by token ID and text.
    *
    * @param sourceId - Source ID.
    * @param sectionId - Section ID whose tokens are being collected.
@@ -264,25 +265,85 @@ class SessionStore {
       return [];
     }
     const log = this.getPerSourceLog(sourceId);
+    const existingTokens = this.getCollectedTokensForSource(sourceId);
+    const seenIds = new Set(log.tokensCollected);
+    const seenTexts = new Set(existingTokens.map((t) => t.text.trim()));
     const added: QuoteToken[] = [];
+
     for (const token of sec.quoteTokens) {
-      if (!log.tokensCollected.includes(token.id)) {
+      if (!seenIds.has(token.id) && !seenTexts.has(token.text.trim())) {
+        seenIds.add(token.id);
+        seenTexts.add(token.text.trim());
         log.tokensCollected.push(token.id);
         added.push(token);
       }
     }
-    if (!this.selectedExitQuoteId && log.tokensCollected.length > 0) {
-      this.selectedExitQuoteId = log.tokensCollected[0];
-    }
+    log.tokensCollected = Array.from(new Set(log.tokensCollected));
     this.notify();
     return added;
   }
 
   /**
-   * Retrieves the full `QuoteToken` objects collected so far for a given source.
+   * Ensures a single supporting quote (returned by the Exit Gate grader on pass/partial)
+   * exists in the source's section tokens and is added to the student's Satchel (deduped by ID).
+   *
+   * @param sourceId - Source ID.
+   * @param quote - Supporting quote `{ id, sectionId, text }`.
+   * @returns The canonical `QuoteToken.id` that can be highlighted in the Full-Text viewer.
+   */
+  public ensureQuoteTokenCollected(
+    sourceId: string,
+    quote: { id: string; sectionId: string; text: string }
+  ): string {
+    logFunctionCall('SessionStore.ensureQuoteTokenCollected', {
+      sourceId,
+      quoteId: quote.id,
+      sectionId: quote.sectionId,
+    });
+    const src = this.session.sources.find((s) => s.id === sourceId);
+    const log = this.getPerSourceLog(sourceId);
+    let canonicalId = quote.id;
+
+    if (src?.sections && src.sections.length > 0) {
+      // Check if an existing token already has this ID or exact text
+      const allTokens = src.sections.flatMap((s) => s.quoteTokens);
+      const existing =
+        allTokens.find((t) => t.id === quote.id) ??
+        allTokens.find((t) => t.text.trim() === quote.text.trim());
+
+      if (existing) {
+        canonicalId = existing.id;
+      } else {
+        const targetSection =
+          src.sections.find((s) => s.id === quote.sectionId) ??
+          src.sections.find((s) => s.text.includes(quote.text.trim())) ??
+          src.sections[0];
+        if (targetSection) {
+          const newToken: QuoteToken = {
+            id: quote.id || `${sourceId}-exit-qt`,
+            sourceId,
+            sectionId: targetSection.id,
+            text: quote.text.trim(),
+          };
+          targetSection.quoteTokens.push(newToken);
+          canonicalId = newToken.id;
+        }
+      }
+    }
+
+    if (!log.tokensCollected.includes(canonicalId)) {
+      log.tokensCollected.push(canonicalId);
+    }
+    log.tokensCollected = Array.from(new Set(log.tokensCollected));
+    return canonicalId;
+  }
+
+  /**
+   * Retrieves the full `QuoteToken` objects collected so far for a given source,
+   * strictly deduplicated by `token.id` (and `token.text`).
    *
    * @param sourceId - Target source ID.
-   * @returns Array of collected `QuoteToken` items.
+   * @returns Deduplicated array of collected `QuoteToken` items.
    */
   public getCollectedTokensForSource(sourceId: string): QuoteToken[] {
     const src = this.session.sources.find((s) => s.id === sourceId);
@@ -290,8 +351,22 @@ class SessionStore {
       return [];
     }
     const log = this.getPerSourceLog(sourceId);
+    const collectedIdSet = new Set(log.tokensCollected);
     const allTokens = src.sections.flatMap((s) => s.quoteTokens);
-    return allTokens.filter((t) => log.tokensCollected.includes(t.id));
+
+    const dedupedByIdAndText = new Map<string, QuoteToken>();
+    const seenText = new Set<string>();
+    for (const token of allTokens) {
+      if (!collectedIdSet.has(token.id)) {
+        continue;
+      }
+      const normText = token.text.trim();
+      if (!dedupedByIdAndText.has(token.id) && !seenText.has(normText)) {
+        dedupedByIdAndText.set(token.id, token);
+        seenText.add(normText);
+      }
+    }
+    return Array.from(dedupedByIdAndText.values());
   }
 
   /**
@@ -359,13 +434,16 @@ class SessionStore {
     logFunctionCall('SessionStore.recordExitAttempt', {
       sourceId,
       grade: attempt.grade,
-      presentedQuoteId: attempt.presentedQuoteId,
+      supportingQuoteId: attempt.supportingQuote?.id,
       hintSectionId,
     });
     const log = this.getPerSourceLog(sourceId);
-    log.attempts.push(attempt);
 
     if (attempt.grade === 'pass' || attempt.grade === 'partial') {
+      if (attempt.supportingQuote) {
+        const canonicalId = this.ensureQuoteTokenCollected(sourceId, attempt.supportingQuote);
+        attempt.supportingQuote.id = canonicalId;
+      }
       log.completed = true;
       log.currentMenace = 0;
       log.hintSectionId = undefined;
@@ -379,6 +457,7 @@ class SessionStore {
         log.hintSectionId = hintSectionId;
       }
     }
+    log.attempts.push(attempt);
     this.notify();
   }
 }

@@ -1,16 +1,17 @@
 /**
  * @file exitGateUi.ts
  * @description Librarian Exit Gate modal for "The Library of Worlds".
- * To leave a Book World, the student speaks with the Librarian at the world's edge, answers one
- * comprehension question in their own words, and (for connected worlds) presents a collected
- * verbatim `QuoteToken` from their Satchel that supports their answer.
+ * To leave a Book World, the student speaks with Head Librarian Aurelius Finch at the world's edge
+ * and answers one comprehension question in their own words.
  *
- * Grading outcomes:
- * - `pass`: Great Kiskadee three-note call plays, world brightens, book marked complete, exit opens.
- * - `weak_evidence`: Answer is sound, but the presented Quote Token does not back it; try another token.
- * - `partial`: Librarian adds the missing nuance and opens the exit.
- * - `wrong`: Logged as a misconception (correction withheld until eventual success), Crow caws,
- *   per-world Menace (0-3) rises, and the NPC holding the relevant section glows as a hint.
+ * Grading outcomes (`pass` / `partial` / `wrong`):
+ * - `pass` or `partial`: Lenient grading; Aurelius replies in 1-2 short sentences, automatically
+ *   cites the single best verbatim supporting quote from the source ("Quite right. As the text says: '…'"),
+ *   adds that quote token to the student's Satchel, offers a "📜 See in text" button that opens the
+ *   Full-Text Object highlighted at that passage, plays the Great Kiskadee call, and unlocks the exit.
+ * - `wrong`: Logged as a misconception (correction and supporting quote withheld until the student passes),
+ *   Crow caws, per-world Menace (0-3) escalates visually and aurally, and the NPC holding the relevant
+ *   section glows as a hint.
  */
 
 import { APP_CONFIG } from '../shared/config';
@@ -26,29 +27,33 @@ import { sessionStore } from './sessionState';
  * @param source - Active `Source`.
  * @param onWorldUpdated - Callback to refresh the 360° world lighting/crows/NPC glow after grading.
  * @param onReturnToHub - Callback to exit the Book World and return to the Library Hub.
+ * @param onHighlightQuoteInText - Callback to open the Full-Text Object scrolled to and highlighting a quote ID.
  */
 export function renderExitGateUi(
   container: HTMLElement,
   source: Source,
   onWorldUpdated: () => void,
-  onReturnToHub: () => void
+  onReturnToHub: () => void,
+  onHighlightQuoteInText?: (quoteId: string) => void
 ): void {
   const log = sessionStore.getPerSourceLog(source.id);
-  const collected = sessionStore.getCollectedTokensForSource(source.id);
-  const selectedQuoteId = sessionStore.getSelectedExitQuoteId() ?? collected[0]?.id ?? '';
   const lastAttempt = log.attempts[log.attempts.length - 1];
 
   logFunctionCall('renderExitGateUi', {
     sourceId: source.id,
     completed: log.completed,
     currentMenace: log.currentMenace,
-    collectedTokenCount: collected.length,
   });
 
   const activeQuestion =
     lastAttempt?.grade === 'wrong' && lastAttempt.rephrasedQuestion
       ? lastAttempt.rephrasedQuestion
       : source.exitQuestion.question;
+
+  const autoCitedQuote =
+    (lastAttempt?.grade === 'pass' || lastAttempt?.grade === 'partial')
+      ? lastAttempt.supportingQuote
+      : undefined;
 
   container.classList.remove('hidden');
   container.innerHTML = `
@@ -57,7 +62,6 @@ export function renderExitGateUi(
         <div>
           <span class="badge-pill">🎩 Aurelius Finch — Exit Gate</span>
           <h3>Prove Your Understanding of This Source</h3>
-          <div class="subtle-text">Menace Level: ${log.currentMenace} / ${APP_CONFIG.world.maxMenace}</div>
         </div>
         <button id="exit-gate-close-btn" class="btn-secondary">Keep Exploring</button>
       </div>
@@ -71,20 +75,32 @@ export function renderExitGateUi(
           ? `<div class="grade-banner grade-${lastAttempt.grade}">
               <strong>${
                 lastAttempt.grade === 'pass'
-                  ? '🐦 Kiskadee Call! Correct & Verified Evidence'
+                  ? '🐦 Kiskadee Call! Exit Unlocked'
                   : lastAttempt.grade === 'partial'
                     ? '✓ Partial Pass — Exit Unlocked'
-                    : lastAttempt.grade === 'weak_evidence'
-                      ? '⚠️ Right Idea, Wrong Quote Token'
-                      : '🐦‍⬛ Crows Stir — Misconception Logged (Menace +1)'
+                    : '🐦‍⬛ Crows Stir — Re-examine the Glowing Section'
               }:</strong>
               <p>${lastAttempt.feedback ?? ''}</p>
               ${
+                autoCitedQuote
+                  ? `<div class="auto-cited-quote-box" style="margin-top:0.65rem;padding:0.65rem 0.85rem;background:rgba(16,185,129,0.12);border-left:3px solid #10b981;border-radius:6px;">
+                      <p style="margin:0 0 0.45rem 0;">
+                        <strong>🎩 Aurelius Finch:</strong> "Quite right. As the text says: <em>'${autoCitedQuote.text}'</em>"
+                      </p>
+                      <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">
+                        <button id="exit-see-in-text-btn" class="btn-secondary" data-quote-id="${autoCitedQuote.id}">
+                          📜 See in text
+                        </button>
+                        <span class="subtle-text">✓ Added to your Evidence Satchel</span>
+                      </div>
+                    </div>`
+                  : ''
+              }
+              ${
                 (lastAttempt.grade === 'pass' || lastAttempt.grade === 'partial') &&
                 log.misconception
-                  ? `<div class="misconception-resolution">
+                  ? `<div class="misconception-resolution" style="margin-top:0.55rem;">
                       <strong>Resolved Earlier Misconception:</strong> ${log.misconception.correction}
-                      <br/><em>Supporting Quote: "${log.misconception.sourceQuote}"</em>
                     </div>`
                   : ''
               }
@@ -99,44 +115,17 @@ export function renderExitGateUi(
             </div>`
           : `
             <div class="exit-form">
-              <label for="exit-answer-input"><strong>1. Your Answer (in your own words):</strong></label>
+              <label for="exit-answer-input"><strong>Your Answer (in your own words):</strong></label>
               <textarea
                 id="exit-answer-input"
                 class="notes-textarea"
                 rows="4"
-                placeholder="Synthesize what you learned from the inhabitants of this world..."
+                placeholder="Explain the key idea you learned from the inhabitants of this world..."
               >${lastAttempt?.answer ?? ''}</textarea>
 
-              ${
-                source.connected
-                  ? `
-                    <label for="exit-quote-select"><strong>2. Present Supporting Quote Token from Your Satchel:</strong></label>
-                    ${
-                      collected.length === 0
-                        ? `<div class="warning-box">Your Satchel is empty! Close this gate and speak to the numbered NPCs around the 360° scene to collect at least one verbatim Quote Token first.</div>`
-                        : `<select id="exit-quote-select" class="quote-select">
-                            ${collected
-                              .map(
-                                (qt) => `
-                              <option value="${qt.id}" ${qt.id === selectedQuoteId ? 'selected' : ''}>
-                                "${qt.text.slice(0, 95)}..."
-                              </option>
-                            `
-                              )
-                              .join('')}
-                          </select>`
-                    }
-                  `
-                  : `<div class="subtle-text">Unconnected Wing: Answer based on the Abstract (no Quote Token required).</div>`
-              }
-
               <div class="exit-submit-row">
-                <button
-                  id="submit-exit-answer-btn"
-                  class="btn-primary"
-                  ${source.connected && collected.length === 0 ? 'disabled' : ''}
-                >
-                  ⚖️ Present Answer & Evidence to Librarian
+                <button id="submit-exit-answer-btn" class="btn-primary">
+                  ⚖️ Answer the Librarian
                 </button>
                 <button id="emergency-leave-btn" class="btn-link">Leave world without completing</button>
               </div>
@@ -160,22 +149,27 @@ export function renderExitGateUi(
     onReturnToHub();
   });
 
+  container.querySelector('#exit-see-in-text-btn')?.addEventListener('click', (ev) => {
+    const qId = (ev.currentTarget as HTMLElement).dataset.quoteId;
+    if (qId && onHighlightQuoteInText) {
+      container.classList.add('hidden');
+      onHighlightQuoteInText(qId);
+    }
+  });
+
   const submitBtn = container.querySelector('#submit-exit-answer-btn') as HTMLButtonElement | null;
   submitBtn?.addEventListener('click', async () => {
     const answerInput = container.querySelector('#exit-answer-input') as HTMLTextAreaElement | null;
-    const quoteSelect = container.querySelector('#exit-quote-select') as HTMLSelectElement | null;
     const studentAnswer = answerInput?.value.trim() ?? '';
-    const presentedQuoteId = quoteSelect?.value ?? undefined;
 
     if (!studentAnswer) {
       return;
     }
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Librarian is examining your evidence...';
+    submitBtn.textContent = 'Librarian is listening...';
 
     try {
-      const presentedQuoteObj = collected.find((qt) => qt.id === presentedQuoteId);
       const response = await fetch(APP_CONFIG.endpoints.exitGrade, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -186,12 +180,11 @@ export function renderExitGateUi(
           expectedAnswer: source.exitQuestion.expectedAnswer,
           supportingQuoteIds: source.exitQuestion.supportingQuoteIds,
           studentAnswer,
-          presentedQuoteId,
-          presentedQuoteText: presentedQuoteObj?.text,
           connected: source.connected,
           sections: source.sections?.map((s) => ({
             id: s.id,
             heading: s.heading,
+            text: s.text,
             quoteTokens: s.quoteTokens.map((q) => ({ id: q.id, text: q.text })),
           })),
         }),
@@ -203,9 +196,13 @@ export function renderExitGateUi(
         hintSectionId?: string;
         correction?: string;
         sourceQuote?: string;
+        supportingQuote?: {
+          id: string;
+          sectionId: string;
+          text: string;
+        };
       };
 
-      // Find the section holding the primary supporting quote so its NPC can glow on wrong answers
       const targetQuoteId = source.exitQuestion.supportingQuoteIds[0];
       const hintSection = source.sections?.find((s) =>
         s.quoteTokens.some((q) => q.id === targetQuoteId)
@@ -225,10 +222,10 @@ export function renderExitGateUi(
         source.id,
         {
           answer: studentAnswer,
-          presentedQuoteId,
           grade: result.grade,
           feedback: result.feedback,
           rephrasedQuestion: result.rephrasedQuestion,
+          supportingQuote: result.supportingQuote,
         },
         result.grade === 'wrong'
           ? {
@@ -241,11 +238,11 @@ export function renderExitGateUi(
       );
 
       onWorldUpdated();
-      renderExitGateUi(container, source, onWorldUpdated, onReturnToHub);
+      renderExitGateUi(container, source, onWorldUpdated, onReturnToHub, onHighlightQuoteInText);
     } catch (err) {
       logFunctionCall('exitGateSubmitError', { error: String(err) });
       submitBtn.disabled = false;
-      submitBtn.textContent = '⚖️ Present Answer & Evidence to Librarian';
+      submitBtn.textContent = '⚖️ Answer the Librarian';
     }
   });
 }
