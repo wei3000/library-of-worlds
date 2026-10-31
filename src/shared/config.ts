@@ -179,13 +179,19 @@ export const APP_CONFIG = {
     }
   >,
 
-  /** 3D Hub navigation and atmosphere configuration. */
+  /** 3D Hub navigation and cosy Victorian lighting/atmosphere configuration. */
   hub: {
     moveSpeed: 7.5,
     lookSensitivity: 0.0024,
     eyeHeight: 1.7,
-    fogColorHex: 0x120d0a,
-    fogDensity: 0.032,
+    toneMappingExposure: 1.22,
+    fogColorHex: 0x362716,
+    fogDensity: 0.021,
+    ambientLightHex: 0xffeacc,
+    ambientLightIntensity: 0.95,
+    hemisphereSkyHex: 0xffe4a3,
+    hemisphereGroundHex: 0x3b2614,
+    hemisphereIntensity: 1.05,
     maxRaycastDistance: 9.0,
   },
 
