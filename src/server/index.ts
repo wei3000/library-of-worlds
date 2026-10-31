@@ -20,6 +20,7 @@ import express from 'express';
 import path from 'node:path';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
+import { gradeExitGateSubmission } from './exitGateGrader';
 import { getGenAiClient } from './genaiClient';
 import { executeResearchPipeline } from './researchPipeline';
 
@@ -120,17 +121,21 @@ app.post(APP_CONFIG.endpoints.research, async (req, res) => {
 /**
  * Exit Gate grading endpoint (`POST /api/exit-grade`).
  * Evaluates whether the student's answer and presented `QuoteToken` support the source's
- * exit question. Returns `{ grade, feedback, hintSectionId, correction, sourceQuote }`.
+ * exit question using the Gemini reasoning model (`gemini-4-argon` with fallback chain).
+ * Returns `{ grade, feedback, rephrasedQuestion, hintSectionId, correction, sourceQuote }`.
  */
 app.post(APP_CONFIG.endpoints.exitGrade, async (req, res) => {
   const {
     sourceId,
+    sourceTitle,
     question,
     expectedAnswer,
     supportingQuoteIds,
     studentAnswer,
     presentedQuoteId,
+    presentedQuoteText,
     connected,
+    sections,
   } = req.body ?? {};
   logFunctionCall('POST /api/exit-grade', {
     sourceId,
@@ -140,51 +145,25 @@ app.post(APP_CONFIG.endpoints.exitGrade, async (req, res) => {
     studentAnswerLength: typeof studentAnswer === 'string' ? studentAnswer.length : 0,
   });
 
-  const cleanAnswer = String(studentAnswer ?? '').trim().toLowerCase();
-  const validQuoteIds: string[] = Array.isArray(supportingQuoteIds) ? supportingQuoteIds : [];
-  const quoteMatches = !connected || validQuoteIds.includes(presentedQuoteId);
-
-  // Check concept overlap with expectedAnswer keywords (words >= 5 chars)
-  const expectedWords = String(expectedAnswer ?? '')
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((w) => w.length >= 5);
-  const matchedKeywords = expectedWords.filter((w) => cleanAnswer.includes(w));
-  const keywordRatio =
-    expectedWords.length > 0 ? matchedKeywords.length / Math.min(expectedWords.length, 5) : 0.5;
-
-  if (cleanAnswer.length >= 15 && keywordRatio >= 0.35 && quoteMatches) {
-    res.json({
-      grade: 'pass',
-      feedback:
-        'Splendidly reasoned! Your explanation captures the heart of the source, and your chosen Quote Token backs it up verbatim. The kiskadee sings — the way back to the Hub is open.',
+  try {
+    const result = await gradeExitGateSubmission({
+      sourceId: String(sourceId ?? ''),
+      sourceTitle: typeof sourceTitle === 'string' ? sourceTitle : undefined,
+      question: String(question ?? ''),
+      expectedAnswer: String(expectedAnswer ?? ''),
+      supportingQuoteIds: Array.isArray(supportingQuoteIds) ? supportingQuoteIds : [],
+      studentAnswer: String(studentAnswer ?? ''),
+      presentedQuoteId: typeof presentedQuoteId === 'string' ? presentedQuoteId : undefined,
+      presentedQuoteText: typeof presentedQuoteText === 'string' ? presentedQuoteText : undefined,
+      connected: Boolean(connected),
+      sections: Array.isArray(sections) ? sections : undefined,
     });
-    return;
-  }
-
-  if (cleanAnswer.length >= 15 && keywordRatio >= 0.35 && !quoteMatches) {
-    res.json({
-      grade: 'weak_evidence',
-      feedback:
-        'Your reasoning is sound, scholar, yet the Quote Token you presented does not substantiate that claim. Inspect your Satchel and present a passage that directly proves your point.',
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : String(err),
     });
-    return;
   }
-
-  if (cleanAnswer.length >= 12 && keywordRatio >= 0.2 && quoteMatches) {
-    res.json({
-      grade: 'partial',
-      feedback: `You have the right intuition and the right quote token! To complete the picture: ${expectedAnswer}`,
-    });
-    return;
-  }
-
-  res.json({
-    grade: 'wrong',
-    feedback:
-      'The shadows lengthen and the crows stir. That interpretation misses what this source actually establishes. Seek the glowing inhabitant who holds the relevant section and try again.',
-    rephrasedQuestion: `Look closely at the section discussing this mechanism: ${question}`,
-  });
 });
 
 const port = Number(process.env.PORT) || 3001;

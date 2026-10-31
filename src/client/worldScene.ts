@@ -19,6 +19,11 @@ import { logFunctionCall } from '../shared/logger';
 import type { PerSourceLog, Source } from '../shared/types';
 import { createLabelTexture } from './bookShelfBuilder';
 import { createBillboardSprite } from './spriteLoader';
+import {
+  buildTierFullTextObject,
+  buildTierWorldEnvironment,
+  type BuiltWorldTemplate,
+} from './worldTemplates';
 
 export interface WorldCallbacks {
   onSelectNpc: (sectionId: string) => void;
@@ -31,6 +36,7 @@ export class WorldSceneController {
   public readonly camera: THREE.PerspectiveCamera;
   private contentGroup: THREE.Group;
   private crowGroup: THREE.Group;
+  private animatedProps: BuiltWorldTemplate['animatedProps'] = [];
   private ambientLight: THREE.AmbientLight;
   private centerLight: THREE.PointLight;
   private yaw = 0;
@@ -89,38 +95,21 @@ export class WorldSceneController {
     while (this.contentGroup.children.length > 0) {
       this.contentGroup.remove(this.contentGroup.children[0]);
     }
+    this.animatedProps = [];
 
-    const tierInfo = APP_CONFIG.tiers[source.tier];
+    // 1. Tier-specific 3D world environment (Market, Workshop, Study, Observatory, or Vaulted Hall)
+    const template = buildTierWorldEnvironment(source);
+    this.contentGroup.add(template.group);
+    this.animatedProps.push(...template.animatedProps);
 
-    // Circular floor & dome sky tailored to tier
-    const floorMat = new THREE.MeshStandardMaterial({
-      color: tierInfo.ambientHex,
-      roughness: 0.75,
-    });
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(18, 48), floorMat);
-    floor.rotation.x = -Math.PI / 2;
-    this.contentGroup.add(floor);
+    // 2. Tier-specific Full-Text Object placed forward-left (Notice Board, Blueprint, Parchment, Stone Tablet, or Lectern)
+    const fullTextObj = buildTierFullTextObject(source);
+    this.contentGroup.add(fullTextObj);
 
-    // Decorative ring pillars around perimeter
-    const pillarMat = new THREE.MeshStandardMaterial({
-      color: tierInfo.colorHex,
-      roughness: 0.55,
-      metalness: 0.25,
-    });
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2;
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.35, 5.5, 12), pillarMat);
-      pillar.position.set(Math.cos(angle) * 9.5, 2.75, Math.sin(angle) * 9.5);
-      this.contentGroup.add(pillar);
-    }
-
-    // 1. Full-Text Object placed forward-left (angle = -0.55 rad)
-    this.buildFullTextObject(source, tierInfo.fullTextObjectName, tierInfo.cssColor);
-
-    // 2. Exit Gate & Librarian placed forward-right (angle = +0.55 rad)
+    // 3. Exit Gate & Librarian placed forward-right (angle = +0.62 rad)
     this.buildExitGate(source, log);
 
-    // 3. Connected vs Unconnected World contents
+    // 4. Connected vs Unconnected World contents
     if (!source.connected || !source.sections || source.sections.length === 0) {
       this.buildUnconnectedWing(source);
     } else {
@@ -131,50 +120,9 @@ export class WorldSceneController {
   }
 
   /**
-   * Builds the clickable Full-Text Object (Notice Board, Blueprint, Parchment, Stone Tablet, or Lectern).
-   */
-  private buildFullTextObject(
-    source: Source,
-    objectName: string,
-    accentCss: string
-  ): void {
-    const group = new THREE.Group();
-    const angle = -0.62;
-    const dist = APP_CONFIG.world.fullTextObjectDistance;
-    group.position.set(Math.sin(angle) * dist, 0, -Math.cos(angle) * dist);
-    group.lookAt(0, 1.3, 0);
-
-    const pedestal = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.35, 0.48, 1.2, 16),
-      new THREE.MeshStandardMaterial({ color: 0x3b2818, roughness: 0.6 })
-    );
-    pedestal.position.y = 0.6;
-    pedestal.userData = { interactableType: 'fullText' };
-    group.add(pedestal);
-
-    const boardTex = createLabelTexture(
-      [
-        `📜 ${objectName}`,
-        source.title.slice(0, 34),
-        'Click to Read Full Source & Quotes',
-      ],
-      '#1e1610',
-      accentCss,
-      '#fef3c7'
-    );
-    const board = new THREE.Mesh(
-      new THREE.BoxGeometry(2.1, 1.15, 0.12),
-      new THREE.MeshBasicMaterial({ map: boardTex })
-    );
-    board.position.y = 1.65;
-    board.userData = { interactableType: 'fullText' };
-    group.add(board);
-
-    this.contentGroup.add(group);
-  }
-
-  /**
    * Builds the Librarian Exit Gate at the world's edge where the student proves understanding.
+   * When `log.completed` is true, a Great Kiskadee bird (bright yellow breast, brown wings,
+   * black-and-white mask) perches atop the archway.
    */
   private buildExitGate(source: Source, log: PerSourceLog): void {
     const group = new THREE.Group();
@@ -197,6 +145,38 @@ export class WorldSceneController {
     arch.userData = { interactableType: 'exitGate' };
     group.add(arch);
 
+    // Great Kiskadee bird perched on the Exit Gate crest when the source is completed
+    if (log.completed) {
+      const kiskadeeGroup = new THREE.Group();
+      kiskadeeGroup.position.set(0.45, 2.95, 0.15);
+      const yellowBreast = new THREE.Mesh(
+        new THREE.SphereGeometry(0.18, 12, 12),
+        new THREE.MeshStandardMaterial({
+          color: 0xfacc15,
+          emissive: 0xeab308,
+          emissiveIntensity: 0.35,
+        })
+      );
+      kiskadeeGroup.add(yellowBreast);
+
+      const brownWings = new THREE.Mesh(
+        new THREE.ConeGeometry(0.16, 0.36, 10),
+        new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.6 })
+      );
+      brownWings.position.set(0, 0.04, -0.1);
+      brownWings.rotation.x = -0.8;
+      kiskadeeGroup.add(brownWings);
+
+      const headCrest = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 10, 10),
+        new THREE.MeshStandardMaterial({ color: 0x18181b })
+      );
+      headCrest.position.set(0, 0.2, 0.08);
+      kiskadeeGroup.add(headCrest);
+
+      group.add(kiskadeeGroup);
+    }
+
     // Librarian Aurelius Finch camera-facing billboard sprite standing by the Exit Gate
     const librarianSprite = createBillboardSprite({
       url: APP_CONFIG.art.librarian,
@@ -210,7 +190,7 @@ export class WorldSceneController {
 
     const gateLabel = createLabelTexture(
       [
-        log.completed ? '✓ Exit Gate Open — Librarian' : '🔒 Exit Gate — Prove Understanding',
+        log.completed ? '✓ Exit Gate Open — Great Kiskadee Perched' : '🔒 Exit Gate — Prove Understanding',
         source.connected ? 'Answer + Present Quote Token' : 'Answer from Abstract to Leave',
       ],
       log.completed ? '#064e3b' : '#261414',
@@ -466,12 +446,17 @@ export class WorldSceneController {
   }
 
   /**
-   * Animates circling crows when Menace > 0.
+   * Animates circling crows (when Menace > 0) and tier-specific mechanical/celestial props.
    *
    * @param deltaSeconds - Frame delta time in seconds.
    */
   public update(deltaSeconds: number): void {
     this.elapsedTime += deltaSeconds;
+
+    for (const prop of this.animatedProps) {
+      prop.object.rotation[prop.axis] += prop.speed * deltaSeconds;
+    }
+
     this.crowGroup.children.forEach((crow, idx) => {
       const angle = this.elapsedTime * 1.4 + idx * 1.2;
       const radius = 3.8 + (idx % 2) * 1.1;

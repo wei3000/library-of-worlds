@@ -175,23 +175,34 @@ export function renderExitGateUi(
     submitBtn.textContent = 'Librarian is examining your evidence...';
 
     try {
+      const presentedQuoteObj = collected.find((qt) => qt.id === presentedQuoteId);
       const response = await fetch(APP_CONFIG.endpoints.exitGrade, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sourceId: source.id,
+          sourceTitle: source.title,
           question: source.exitQuestion.question,
           expectedAnswer: source.exitQuestion.expectedAnswer,
           supportingQuoteIds: source.exitQuestion.supportingQuoteIds,
           studentAnswer,
           presentedQuoteId,
+          presentedQuoteText: presentedQuoteObj?.text,
           connected: source.connected,
+          sections: source.sections?.map((s) => ({
+            id: s.id,
+            heading: s.heading,
+            quoteTokens: s.quoteTokens.map((q) => ({ id: q.id, text: q.text })),
+          })),
         }),
       });
       const result = (await response.json()) as {
         grade: ExitGrade;
         feedback: string;
         rephrasedQuestion?: string;
+        hintSectionId?: string;
+        correction?: string;
+        sourceQuote?: string;
       };
 
       // Find the section holding the primary supporting quote so its NPC can glow on wrong answers
@@ -200,6 +211,7 @@ export function renderExitGateUi(
         s.quoteTokens.some((q) => q.id === targetQuoteId)
       );
       const supportingQuoteText =
+        result.sourceQuote ??
         hintSection?.quoteTokens.find((q) => q.id === targetQuoteId)?.text ??
         source.summary;
 
@@ -221,11 +233,11 @@ export function renderExitGateUi(
         result.grade === 'wrong'
           ? {
               answer: studentAnswer,
-              correction: source.exitQuestion.expectedAnswer,
+              correction: result.correction ?? source.exitQuestion.expectedAnswer,
               sourceQuote: supportingQuoteText,
             }
           : undefined,
-        result.grade === 'wrong' ? hintSection?.id : undefined
+        result.grade === 'wrong' ? (result.hintSectionId ?? hintSection?.id) : undefined
       );
 
       onWorldUpdated();
