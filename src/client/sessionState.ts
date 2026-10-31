@@ -1,0 +1,386 @@
+/**
+ * @file sessionState.ts
+ * @description Reactive client-side session store managing the `SessionLog` contract
+ * for "The Library of Worlds".
+ * Tracks the student's active research question, verified sources, ordered reading path,
+ * ghost citation count, per-source notes, visited NPCs, collected Quote Tokens,
+ * Exit Gate attempts, misconceptions, and per-world Menace level (0-3, resetting on world exit).
+ *
+ * Use cases:
+ * 1. Synchronizing HUD components (Satchel, Notes Scroll, Full-Text Modal, Exit Gate) with 3D scenes.
+ * 2. Persisting per-source notes and collected tokens across world entries.
+ * 3. Resetting `currentMenace` when leaving a book world while preserving `maxMenace` for the Borrowing Record.
+ */
+
+import { APP_CONFIG } from '../shared/config';
+import { logFunctionCall } from '../shared/logger';
+import type {
+  ExitAttempt,
+  MisconceptionRecord,
+  PerSourceLog,
+  QuoteToken,
+  SessionLog,
+  Source,
+} from '../shared/types';
+import { getSampleSources } from './sampleData';
+
+type Listener = () => void;
+
+const TIER_ORDER: Record<Source['tier'], number> = {
+  imp: 1,
+  goblin: 2,
+  apprentice: 3,
+  wizard: 4,
+  archmage: 5,
+};
+
+/**
+ * Computes the ordered reading path (`sourceId[]`) from easiest (`imp`) to hardest (`archmage`).
+ *
+ * @param sources - List of verified sources.
+ * @returns Array of source IDs sorted by tier order.
+ */
+export function computeReadingPath(sources: Source[]): string[] {
+  logFunctionCall('computeReadingPath', { sourceCount: sources.length });
+  return [...sources]
+    .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier])
+    .map((s) => s.id);
+}
+
+/**
+ * Creates a fresh `PerSourceLog` entry for a given source.
+ *
+ * @param sourceId - ID of the source being initialized.
+ * @returns Initialized `PerSourceLog`.
+ */
+function createEmptyPerSourceLog(sourceId: string): PerSourceLog {
+  logFunctionCall('createEmptyPerSourceLog', { sourceId });
+  return {
+    notes: '',
+    npcsVisited: [],
+    tokensCollected: [],
+    attempts: [],
+    currentMenace: 0,
+    maxMenace: 0,
+    completed: false,
+  };
+}
+
+class SessionStore {
+  private session: SessionLog;
+  private activeSourceId: string | null = null;
+  private activeSectionId: string | null = null;
+  private selectedExitQuoteId: string | null = null;
+  private listeners: Set<Listener> = new Set();
+
+  constructor() {
+    const initialSources = getSampleSources();
+    const perSource: Record<string, PerSourceLog> = {};
+    for (const src of initialSources) {
+      perSource[src.id] = createEmptyPerSourceLog(src.id);
+    }
+
+    this.session = {
+      question: APP_CONFIG.seedQuestion,
+      sources: initialSources,
+      path: computeReadingPath(initialSources),
+      ghostCitationCount: 2, // Sample ghost citations filtered out by verifier
+      perSource,
+      takeaway: {
+        transcript: '',
+        claims: [],
+      },
+    };
+  }
+
+  /**
+   * Subscribes a listener callback to state changes.
+   *
+   * @param listener - Callback invoked whenever session state updates.
+   * @returns Unsubscribe function.
+   */
+  public subscribe(listener: Listener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  /**
+   * Notifies all registered UI and scene listeners of a state change.
+   */
+  private notify(): void {
+    for (const listener of this.listeners) {
+      listener();
+    }
+  }
+
+  /**
+   * Returns the current `SessionLog` snapshot.
+   *
+   * @returns Current `SessionLog`.
+   */
+  public getSession(): SessionLog {
+    return this.session;
+  }
+
+  /**
+   * Updates the active research question and optionally replaces the `Source[]` list.
+   *
+   * @param question - Student's research question.
+   * @param newSources - Optional new verified sources from the research pipeline.
+   * @param ghostCitationCount - Optional count of discarded ghost citations.
+   */
+  public setQuestionAndSources(
+    question: string,
+    newSources?: Source[],
+    ghostCitationCount?: number
+  ): void {
+    logFunctionCall('SessionStore.setQuestionAndSources', {
+      question,
+      newSourceCount: newSources?.length,
+      ghostCitationCount,
+    });
+    this.session.question = question;
+    if (newSources) {
+      this.session.sources = newSources;
+      this.session.path = computeReadingPath(newSources);
+      for (const src of newSources) {
+        if (!this.session.perSource[src.id]) {
+          this.session.perSource[src.id] = createEmptyPerSourceLog(src.id);
+        }
+      }
+    }
+    if (typeof ghostCitationCount === 'number') {
+      this.session.ghostCitationCount = ghostCitationCount;
+    }
+    this.notify();
+  }
+
+  /**
+   * Returns the currently entered book `Source`, or `null` when the player is in the Library Hub.
+   *
+   * @returns Active `Source` or `null`.
+   */
+  public getActiveSource(): Source | null {
+    if (!this.activeSourceId) {
+      return null;
+    }
+    return this.session.sources.find((s) => s.id === this.activeSourceId) ?? null;
+  }
+
+  /**
+   * Returns the `PerSourceLog` for a given `sourceId`, creating one if missing.
+   *
+   * @param sourceId - Target source ID.
+   * @returns The `PerSourceLog` for that source.
+   */
+  public getPerSourceLog(sourceId: string): PerSourceLog {
+    if (!this.session.perSource[sourceId]) {
+      this.session.perSource[sourceId] = createEmptyPerSourceLog(sourceId);
+    }
+    return this.session.perSource[sourceId];
+  }
+
+  /**
+   * Enters a book world by setting `activeSourceId` and resetting `currentMenace` to 0.
+   *
+   * @param sourceId - ID of the book source to enter.
+   */
+  public enterBookWorld(sourceId: string): void {
+    logFunctionCall('SessionStore.enterBookWorld', { sourceId });
+    this.activeSourceId = sourceId;
+    this.activeSectionId = null;
+    const log = this.getPerSourceLog(sourceId);
+    log.currentMenace = 0;
+    const collected = this.getCollectedTokensForSource(sourceId);
+    this.selectedExitQuoteId = collected[0]?.id ?? null;
+    this.notify();
+  }
+
+  /**
+   * Leaves the current book world and returns to the Library Hub, resetting `currentMenace` to 0.
+   */
+  public leaveBookWorld(): void {
+    logFunctionCall('SessionStore.leaveBookWorld', { previousSourceId: this.activeSourceId });
+    if (this.activeSourceId) {
+      const log = this.getPerSourceLog(this.activeSourceId);
+      log.currentMenace = 0;
+    }
+    this.activeSourceId = null;
+    this.activeSectionId = null;
+    this.selectedExitQuoteId = null;
+    this.notify();
+  }
+
+  /**
+   * Records that the student opened dialogue with a section NPC.
+   *
+   * @param sourceId - Active source ID.
+   * @param sectionId - Section ID of the NPC visited.
+   */
+  public visitNpc(sourceId: string, sectionId: string): void {
+    logFunctionCall('SessionStore.visitNpc', { sourceId, sectionId });
+    this.activeSectionId = sectionId;
+    const log = this.getPerSourceLog(sourceId);
+    if (!log.npcsVisited.includes(sectionId)) {
+      log.npcsVisited.push(sectionId);
+    }
+    this.notify();
+  }
+
+  /**
+   * Closes the active NPC dialogue overlay.
+   */
+  public closeNpcDialogue(): void {
+    logFunctionCall('SessionStore.closeNpcDialogue', {});
+    this.activeSectionId = null;
+    this.notify();
+  }
+
+  /**
+   * Returns the currently open NPC `Section` in the active book world, if any.
+   *
+   * @returns Active `Section` or `null`.
+   */
+  public getActiveSection() {
+    const src = this.getActiveSource();
+    if (!src || !src.sections || !this.activeSectionId) {
+      return null;
+    }
+    return src.sections.find((sec) => sec.id === this.activeSectionId) ?? null;
+  }
+
+  /**
+   * Collects all verbatim `QuoteToken`s from a given section into the student's Satchel.
+   *
+   * @param sourceId - Source ID.
+   * @param sectionId - Section ID whose tokens are being collected.
+   * @returns Array of newly collected `QuoteToken` objects.
+   */
+  public collectSectionTokens(sourceId: string, sectionId: string): QuoteToken[] {
+    logFunctionCall('SessionStore.collectSectionTokens', { sourceId, sectionId });
+    const src = this.session.sources.find((s) => s.id === sourceId);
+    const sec = src?.sections?.find((s) => s.id === sectionId);
+    if (!sec) {
+      return [];
+    }
+    const log = this.getPerSourceLog(sourceId);
+    const added: QuoteToken[] = [];
+    for (const token of sec.quoteTokens) {
+      if (!log.tokensCollected.includes(token.id)) {
+        log.tokensCollected.push(token.id);
+        added.push(token);
+      }
+    }
+    if (!this.selectedExitQuoteId && log.tokensCollected.length > 0) {
+      this.selectedExitQuoteId = log.tokensCollected[0];
+    }
+    this.notify();
+    return added;
+  }
+
+  /**
+   * Retrieves the full `QuoteToken` objects collected so far for a given source.
+   *
+   * @param sourceId - Target source ID.
+   * @returns Array of collected `QuoteToken` items.
+   */
+  public getCollectedTokensForSource(sourceId: string): QuoteToken[] {
+    const src = this.session.sources.find((s) => s.id === sourceId);
+    if (!src || !src.sections) {
+      return [];
+    }
+    const log = this.getPerSourceLog(sourceId);
+    const allTokens = src.sections.flatMap((s) => s.quoteTokens);
+    return allTokens.filter((t) => log.tokensCollected.includes(t.id));
+  }
+
+  /**
+   * Selects a collected `QuoteToken` in the Satchel to present at the Exit Gate.
+   *
+   * @param quoteId - ID of the selected quote token.
+   */
+  public selectExitQuote(quoteId: string): void {
+    logFunctionCall('SessionStore.selectExitQuote', { quoteId });
+    this.selectedExitQuoteId = quoteId;
+    this.notify();
+  }
+
+  /**
+   * Gets the currently selected `QuoteToken` ID for the Exit Gate.
+   *
+   * @returns Selected quote token ID or `null`.
+   */
+  public getSelectedExitQuoteId(): string | null {
+    return this.selectedExitQuoteId;
+  }
+
+  /**
+   * Updates the student's Notes Scroll text for a given source.
+   *
+   * @param sourceId - Source ID.
+   * @param notes - Updated notes text.
+   */
+  public updateNotes(sourceId: string, notes: string): void {
+    logFunctionCall('SessionStore.updateNotes', { sourceId, notesLength: notes.length });
+    const log = this.getPerSourceLog(sourceId);
+    log.notes = notes;
+    this.notify();
+  }
+
+  /**
+   * Appends a verbatim Quote Token into the student's Notes Scroll for the source.
+   *
+   * @param sourceId - Source ID.
+   * @param quoteText - Verbatim text of the quote token.
+   */
+  public appendQuoteToNotes(sourceId: string, quoteText: string): void {
+    logFunctionCall('SessionStore.appendQuoteToNotes', { sourceId, quoteText });
+    const log = this.getPerSourceLog(sourceId);
+    const prefix = log.notes.trim().length > 0 ? `${log.notes.trim()}\n\n` : '';
+    log.notes = `${prefix}> "${quoteText}"`;
+    this.notify();
+  }
+
+  /**
+   * Records an Exit Gate attempt and updates Menace level (0-3), completion status,
+   * hint NPC glow, and misconception records accordingly.
+   *
+   * @param sourceId - Source ID being graded.
+   * @param attempt - Graded `ExitAttempt`.
+   * @param misconception - Optional misconception record when an answer was wrong or corrected.
+   * @param hintSectionId - Optional section ID whose NPC should glow as a hint after a wrong answer.
+   */
+  public recordExitAttempt(
+    sourceId: string,
+    attempt: ExitAttempt,
+    misconception?: MisconceptionRecord,
+    hintSectionId?: string
+  ): void {
+    logFunctionCall('SessionStore.recordExitAttempt', {
+      sourceId,
+      grade: attempt.grade,
+      presentedQuoteId: attempt.presentedQuoteId,
+      hintSectionId,
+    });
+    const log = this.getPerSourceLog(sourceId);
+    log.attempts.push(attempt);
+
+    if (attempt.grade === 'pass' || attempt.grade === 'partial') {
+      log.completed = true;
+      log.currentMenace = 0;
+      log.hintSectionId = undefined;
+    } else if (attempt.grade === 'wrong') {
+      log.currentMenace = Math.min(APP_CONFIG.world.maxMenace, log.currentMenace + 1);
+      log.maxMenace = Math.max(log.maxMenace, log.currentMenace);
+      if (misconception) {
+        log.misconception = misconception;
+      }
+      if (hintSectionId) {
+        log.hintSectionId = hintSectionId;
+      }
+    }
+    this.notify();
+  }
+}
+
+export const sessionStore = new SessionStore();

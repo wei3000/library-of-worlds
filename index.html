@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Library of Worlds — Every source a world to explore</title>
+    <link rel="stylesheet" href="/src/client/styles.css" />
+  </head>
+  <body>
+    <canvas id="webgl-canvas"></canvas>
+
+    <!-- Top HUD Bar -->
+    <header id="top-hud" class="top-hud">
+      <div class="brand-block">
+        <h1>🏛️ The Library of Worlds</h1>
+        <span class="subtitle">Every source a world to explore</span>
+      </div>
+
+      <div id="question-banner" class="question-banner">
+        <label for="research-question-input"><strong>Active Research Question:</strong></label>
+        <div class="question-input-row">
+          <input
+            id="research-question-input"
+            type="text"
+            class="question-input"
+            aria-label="Research question"
+          />
+          <button id="ask-librarian-btn" class="btn-primary">🎩 Ask Librarian</button>
+        </div>
+      </div>
+
+      <div class="hud-stats">
+        <div id="ghost-citation-badge" class="stat-pill ghost-pill" title="Unresolvable / hallucinated citations discarded by Verifier">
+          👻 Ghost Citations Filtered: <strong id="ghost-count-val">2</strong>
+        </div>
+        <div id="mode-indicator" class="stat-pill">📍 Victorian Hub (WASD + Drag)</div>
+      </div>
+    </header>
+
+    <!-- Reading Path Bar (Quick Jump + Status) -->
+    <nav id="reading-path-bar" class="reading-path-bar" aria-label="Recommended Reading Path"></nav>
+
+    <!-- World Action Bar (Shown only inside a Book World) -->
+    <div id="world-toolbar" class="world-toolbar hidden">
+      <div id="world-title-banner" class="world-title-banner"></div>
+      <div class="world-toolbar-buttons">
+        <button id="open-fulltext-btn" class="btn-secondary">📜 Open Full-Text Object</button>
+        <button id="open-notes-btn" class="btn-secondary">🖋️ Notes Scroll</button>
+        <button id="open-exitgate-btn" class="btn-primary">🚪 Librarian Exit Gate</button>
+        <button id="back-to-hub-btn" class="btn-secondary">↩ Hub</button>
+      </div>
+    </div>
+
+    <!-- Hover Tooltip ("Why this tier") in Hub -->
+    <div id="book-hover-tooltip" class="book-hover-tooltip hidden"></div>
+
+    <!-- Bottom Satchel Drawer (Shown inside a Book World) -->
+    <aside id="satchel-container" class="satchel-container hidden"></aside>
+
+    <!-- Modal Overlays -->
+    <div id="npc-dialogue-modal" class="modal-backdrop hidden"></div>
+    <div id="fulltext-modal" class="modal-backdrop hidden"></div>
+    <div id="notes-scroll-modal" class="modal-backdrop hidden"></div>
+    <div id="exit-gate-modal" class="modal-backdrop hidden"></div>
+
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>
