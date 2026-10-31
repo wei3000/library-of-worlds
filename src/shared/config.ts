@@ -28,11 +28,32 @@ export const APP_CONFIG = {
   endpoints: {
     health: '/api/health',
     research: '/api/research',
+    researchStream: '/api/research/stream',
     world: '/api/world',
     exitGrade: '/api/exit-grade',
     debriefGrade: '/api/debrief-grade',
     tts: '/api/tts',
     liveToken: '/api/live-token',
+  },
+
+  /** Milestone 2 Research Pipeline & External Verification settings. */
+  pipeline: {
+    /** Relative directory on disk for caching pipeline results (`cache/<hash>.json`). */
+    cacheDir: 'cache',
+    /** Hard timeout in milliseconds for any external verification or full-text HTTP call (~10s). */
+    externalCallTimeoutMs: 10000,
+    /** Minimum character length of extracted body text to qualify as a connected world. */
+    minConnectedTextLength: 450,
+    /** Maximum character length of extracted source text sent into the world extraction LLM prompt. */
+    maxSourceTextCharsForExtraction: 24000,
+    /** External verification endpoints (no secrets required). */
+    externalApis: {
+      crossrefWorksUrl: 'https://api.crossref.org/works',
+      semanticScholarSearchUrl: 'https://api.semanticscholar.org/graph/v1/paper/search',
+      arxivQueryUrl: 'https://export.arxiv.org/api/query',
+      ar5ivHtmlBaseUrl: 'https://ar5iv.labs.arxiv.org/html',
+      arxivHtmlBaseUrl: 'https://arxiv.org/html',
+    },
   },
 
   /**

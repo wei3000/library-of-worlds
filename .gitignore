@@ -15,6 +15,7 @@ out/
 
 # Logs & caches
 logs/
+cache/
 *.log
 npm-debug.log*
 yarn-debug.log*

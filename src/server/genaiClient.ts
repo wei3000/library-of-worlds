@@ -2,11 +2,12 @@
  * @file genaiClient.ts
  * @description Server-side wrapper around the official `@google/genai` SDK (`GoogleGenAI`).
  * Enforces key security, exponential backoff on HTTP 429/503 errors, automatic model fallback
- * (`gemini-4-argon` -> `gemini-3.8-flash` -> `gemini-3.5-flash-lite`), and complete `INFO` logging
- * of all GenAI calls (model, prompt, config, output) with inline data stripped.
+ * (`gemini-4-argon` -> `gemini-3.8-flash` -> `gemini-3.5-flash-lite`), structured JSON output
+ * parsing, and complete `INFO` logging of all GenAI calls (model, prompt, config, output)
+ * with inline data stripped and secrets redacted.
  *
  * Use cases:
- * 1. Executing structured JSON interactions with Gemini 4 Argon.
+ * 1. Executing structured JSON interactions with Gemini 4 Argon / Gemini 3.8 Flash.
  * 2. Executing grounded Google Search + Python code execution research turns.
  * 3. Automatic retry & graceful degradation during high-load hackathon demos.
  */
@@ -61,11 +62,57 @@ function classifyError(err: unknown): { retryable: boolean; is503: boolean } {
 }
 
 /**
+ * Extracts and parses a JSON object or array from a model output string,
+ * handling markdown code fences or leading/trailing prose gracefully.
+ *
+ * @param rawText - Raw string returned by the model.
+ * @returns Parsed JSON value of type `T`.
+ */
+export function parseJsonOutput<T>(rawText: string): T {
+  logFunctionCall('parseJsonOutput', { rawLength: rawText.length });
+  const trimmed = rawText.trim();
+
+  // 1. Direct parse attempt
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    // Continue to fence/brace extraction
+  }
+
+  // 2. Strip ```json ... ``` fences
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch && fenceMatch[1]) {
+    try {
+      return JSON.parse(fenceMatch[1].trim()) as T;
+    } catch {
+      // Continue to brace extraction
+    }
+  }
+
+  // 3. Extract outermost {...} or [...]
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = trimmed.slice(firstBrace, lastBrace + 1);
+    return JSON.parse(candidate) as T;
+  }
+
+  const firstBracket = trimmed.indexOf('[');
+  const lastBracket = trimmed.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    const candidate = trimmed.slice(firstBracket, lastBracket + 1);
+    return JSON.parse(candidate) as T;
+  }
+
+  throw new Error(`Failed to parse JSON from model output (length ${rawText.length})`);
+}
+
+/**
  * Calls the Gemini Interactions API (`client.interactions.create`) with exponential backoff
  * on 429/503 and automatic fallback across the configured reasoning model chain on repeated 503s.
  * Every call and output is logged via `logGenAiCall` with inline data stripped.
  *
- * @param params - Action label, input prompt, optional generation/tool config, and optional model override list.
+ * @param params - Action label, input prompt, optional generation/tool/schema config, and optional model override list.
  * @returns The raw output text and interaction object from Gemini.
  */
 export async function runReasoningInteraction(params: {
@@ -74,11 +121,14 @@ export async function runReasoningInteraction(params: {
   systemInstruction?: string;
   generationConfig?: Record<string, unknown>;
   tools?: Array<Record<string, unknown>>;
+  responseFormat?: Record<string, unknown>;
   modelsToTry?: string[];
 }): Promise<{ outputText: string; modelUsed: string; rawInteraction: unknown }> {
   logFunctionCall('runReasoningInteraction', {
     action: params.action,
     modelsToTry: params.modelsToTry,
+    hasTools: Boolean(params.tools?.length),
+    hasResponseFormat: Boolean(params.responseFormat),
   });
 
   const client = getGenAiClient();
@@ -103,10 +153,10 @@ export async function runReasoningInteraction(params: {
         ...(params.systemInstruction ? { system_instruction: params.systemInstruction } : {}),
         ...(params.generationConfig ? { generation_config: params.generationConfig } : {}),
         ...(params.tools ? { tools: params.tools } : {}),
+        ...(params.responseFormat ? { response_format: params.responseFormat } : {}),
       };
 
       try {
-        // Prefer Interactions API per gemini-api-dev skill; fall back to models.generateContent if needed
         const interactionsApi = (client as unknown as {
           interactions?: {
             create: (req: Record<string, unknown>) => Promise<{ output_text?: string }>;
@@ -124,9 +174,15 @@ export async function runReasoningInteraction(params: {
               systemInstruction: params.systemInstruction,
               generationConfig: params.generationConfig,
               tools: params.tools,
+              hasResponseFormat: Boolean(params.responseFormat),
               attempt,
             },
-            output: interaction,
+            output: {
+              output_text: outputText,
+              id: (interaction as Record<string, unknown>).id,
+              status: (interaction as Record<string, unknown>).status,
+              usage: (interaction as Record<string, unknown>).usage,
+            },
           });
           return { outputText, modelUsed: model, rawInteraction: interaction };
         }

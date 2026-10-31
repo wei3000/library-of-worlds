@@ -44,15 +44,20 @@ npm run dev
 
 ---
 
-## Milestone Status (Milestone 1)
+## Milestone Status (Milestone 2)
 
 ### Working Now
-- **3D Victorian Library Hub**: Procedural bookshelves across themed aisles, warm Victorian lamps, atmospheric fog, glowing Lantern Path (`Imp` → `Archmage`), Victorian Librarian at the central desk, typed research question box seeded with the bioacoustics prompt, and 5 tier-styled sample `Source[]` books with hover tooltips ("Why this tier").
-- **360° Book World**: Interactive 360° look-around world with 3+ section NPCs, in-character dialogue + 3 follow-up options (including substring-validated verbatim lines), Satchel UI with Quote Token collection, Full-Text object viewer with passage scroll & highlight, persistent Notes Scroll, and Exit Gate with answer + evidence evaluation and per-world Menace (0–3) feedback.
-- **Express Backend + GenAI Wrapper**: Server scaffolding with `.env` key isolation, exponential backoff + fallback model config, and structured `INFO` logging.
+- **Live Grounded Research Pipeline (`src/server/researchPipeline.ts`)**:
+  - **Research Agent (`researchAgent.ts`)**: Uses `gemini-4-argon` + Google Search grounding (`tools: [{ type: 'google_search' }]`) to propose candidate sources across 3–5 thematic aisles.
+  - **Parallel Bibliographic Verifier (`verifier.ts`)**: Verifies all candidates in parallel (10s timeout per external call) against Crossref, arXiv API, Semantic Scholar, and live HTTP resolution. Unresolvable candidates are discarded and tallied as **Ghost Citations**.
+  - **Metadata-Driven Tiering (`tierClassifier.ts`)**: Deterministically assigns `Imp`, `Goblin`, `Apprentice`, `Wizard`, or `Archmage` from verified metadata (`venue`, `venueType`, `citationCount`, `year`, `doi`, `arxivId`) — never model opinion.
+  - **Parallel Full-Text Extraction (`textExtractor.ts`)**: Fetches full text for arXiv papers (`ar5iv` / `arxiv.org/html`) and web/documentation pages with a 10s timeout. Sources that time out or lack open-access full text gracefully become **Unconnected Worlds** (`connected: false`).
+  - **Parallel Book World & Substring-Validated NPC Builder (`worldBuilder.ts`)**: Splits connected sources into 5–8 sections, generates tier-styled NPCs, grounded explanations, follow-ups, and 1–2 `QuoteToken`s per section, and validates server-side that every `QuoteToken.text` and `followUps.verbatimLine` is an exact substring of `section.text`.
+  - **Disk Cache (`pipelineCache.ts`)**: Saves each pipeline run to `cache/<sha256-hash>.json` (gitignored) and reuses it on repeat questions unless the **Force refresh** checkbox is ticked.
+  - **Live SSE Librarian Narration (`librarianNarratorUi.ts`)**: Streams pipeline stages in real time to the Hub banner (*"Searching the stacks… candidates found… ghost citations dismissed… shelving volumes…"*).
+- **3D Victorian Library Hub & 360° Book Worlds (Milestone 1)**: WASD + mouse-look Hub, glowing Lantern Path, hover tooltips, 360° Book Worlds, NPC dialogue, Satchel, Notes Scroll, Full-Text viewer with passage highlighting, and Exit Gate with Menace (0–3).
 
 ### Stubbed for Upcoming Milestones
-- **Milestone 2**: Live Research Agent + Crossref/Semantic Scholar/arXiv Verifier + dynamic full-text extraction pipeline.
 - **Milestone 3**: Distinct 3D scene templates per tier, Nano Banana art panels/portraits, and Gemini 4 Argon LLM Exit Gate grading.
 - **Milestone 4**: Hub Exit Debrief with claim verification, mischievous Elves for unsupported claims, and printable Borrowing Record PDF.
 - **Milestone 5**: Gemini Live (`gemini-3.8-live`) bidirectional voice and Gemini TTS (`gemini-3.8-flash-tts`) Voice Design character voices.

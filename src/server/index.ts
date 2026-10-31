@@ -2,14 +2,16 @@
  * @file index.ts
  * @description Express backend server for "The Library of Worlds".
  * Holds the `GEMINI_API_KEY` securely on the server side (loaded from `.env`) and exposes
- * JSON endpoints for the Three.js frontend. The browser never calls Gemini directly.
+ * JSON and SSE endpoints for the Three.js frontend. The browser never calls Gemini directly.
  *
  * Use cases:
  * 1. `/api/health`: Reports server readiness and whether `GEMINI_API_KEY` is configured.
- * 2. `/api/exit-grade`: Evaluates a student's exit gate answer and presented quote token
- *    (Milestone 1 deterministic + keyword/quote grader, upgraded to full Gemini 4 Argon grader in M2/M3).
- * 3. `/api/research`, `/api/world/:sourceId`, `/api/debrief-grade`, `/api/live-token`:
- *    Scaffolded endpoints ready for Milestone 2-5 pipeline integration.
+ * 2. `/api/research/stream`: Server-Sent Events (SSE) endpoint that runs the Milestone 2
+ *    Research Pipeline (`executeResearchPipeline`) and streams live Librarian narration
+ *    (`PipelineProgressEvent`) to the Hub UI.
+ * 3. `/api/research`: Standard JSON POST endpoint for executing or retrieving a cached
+ *    research pipeline run.
+ * 4. `/api/exit-grade`: Evaluates a student's exit gate answer and presented quote token.
  */
 
 import cors from 'cors';
@@ -19,6 +21,7 @@ import path from 'node:path';
 import { APP_CONFIG } from '../shared/config';
 import { logFunctionCall } from '../shared/logger';
 import { getGenAiClient } from './genaiClient';
+import { executeResearchPipeline } from './researchPipeline';
 
 dotenv.config();
 
@@ -44,13 +47,91 @@ app.get(APP_CONFIG.endpoints.health, (_req, res) => {
 });
 
 /**
+ * Server-Sent Events (SSE) endpoint (`GET /api/research/stream?question=...&force=...`)
+ * that executes the Milestone 2 Research Pipeline and streams live Librarian narration
+ * stages (`PipelineProgressEvent`) to the client.
+ */
+app.get(APP_CONFIG.endpoints.researchStream, async (req, res) => {
+  const question = String(req.query.question || APP_CONFIG.seedQuestion).trim();
+  const forceRefresh = req.query.force === 'true' || req.query.force === '1';
+
+  logFunctionCall('GET /api/research/stream', {
+    question,
+    forceRefresh,
+  });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const sendEvent = (payload: unknown): void => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  try {
+    await executeResearchPipeline({
+      question,
+      forceRefresh,
+      onProgress: (event) => {
+        sendEvent(event);
+      },
+    });
+    res.end();
+  } catch (err) {
+    sendEvent({
+      stage: 'error',
+      narration: `Alas! A disturbance in the ether interrupted the search: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      elapsedMs: 0,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    res.end();
+  }
+});
+
+/**
+ * JSON POST endpoint (`POST /api/research`) to run the research pipeline and return
+ * the final `ResearchPipelineResult`.
+ */
+app.post(APP_CONFIG.endpoints.research, async (req, res) => {
+  const question = String(req.body?.question || APP_CONFIG.seedQuestion).trim();
+  const forceRefresh = Boolean(req.body?.forceRefresh);
+
+  logFunctionCall('POST /api/research', {
+    question,
+    forceRefresh,
+  });
+
+  try {
+    const result = await executeResearchPipeline({
+      question,
+      forceRefresh,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+/**
  * Exit Gate grading endpoint (`POST /api/exit-grade`).
  * Evaluates whether the student's answer and presented `QuoteToken` support the source's
  * exit question. Returns `{ grade, feedback, hintSectionId, correction, sourceQuote }`.
  */
 app.post(APP_CONFIG.endpoints.exitGrade, async (req, res) => {
-  const { sourceId, question, expectedAnswer, supportingQuoteIds, studentAnswer, presentedQuoteId, connected } =
-    req.body ?? {};
+  const {
+    sourceId,
+    question,
+    expectedAnswer,
+    supportingQuoteIds,
+    studentAnswer,
+    presentedQuoteId,
+    connected,
+  } = req.body ?? {};
   logFunctionCall('POST /api/exit-grade', {
     sourceId,
     question,

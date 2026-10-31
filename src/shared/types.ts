@@ -158,3 +158,39 @@ export interface SessionLog {
     url?: string;
   }>;
 }
+
+/** Progress stages streamed via SSE by the Librarian during the research pipeline. */
+export type PipelineStage =
+  | 'cache_check'
+  | 'searching'
+  | 'candidates_found'
+  | 'verifying'
+  | 'verified'
+  | 'fetching_text'
+  | 'extracting_worlds'
+  | 'shelving'
+  | 'complete'
+  | 'error';
+
+export interface PipelineProgressEvent {
+  stage: PipelineStage;
+  /** In-character narration line spoken/displayed by the Head Librarian. */
+  narration: string;
+  /** Elapsed time in milliseconds since pipeline start. */
+  elapsedMs: number;
+  /** Optional final result when `stage === 'complete'`. */
+  result?: ResearchPipelineResult;
+  /** Optional error detail when `stage === 'error'`. */
+  error?: string;
+}
+
+export interface ResearchPipelineResult {
+  question: string;
+  sources: Source[];
+  /** Ordered array of sourceIds from easiest (Imp) to hardest (Archmage). */
+  path: string[];
+  ghostCitationCount: number;
+  fromCache: boolean;
+  cachedAt: string;
+  durationMs: number;
+}

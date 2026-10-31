@@ -21,6 +21,7 @@ import type { Source } from '../shared/types';
 import { renderExitGateUi } from './exitGateUi';
 import { renderFullTextModal } from './fullTextModal';
 import { HubSceneController } from './hubScene';
+import { runLibrarianPipelineStream } from './librarianNarratorUi';
 import { renderNotesScrollUi } from './notesScrollUi';
 import { renderNpcDialogueUi } from './npcDialogueUi';
 import { renderSatchelUi } from './satchelUi';
@@ -30,6 +31,8 @@ import { WorldSceneController } from './worldScene';
 const canvas = document.getElementById('webgl-canvas') as HTMLCanvasElement;
 const questionInput = document.getElementById('research-question-input') as HTMLInputElement;
 const askLibrarianBtn = document.getElementById('ask-librarian-btn') as HTMLButtonElement;
+const forceRefreshCheckbox = document.getElementById('force-refresh-checkbox') as HTMLInputElement;
+const librarianNarrationBanner = document.getElementById('librarian-narration-banner') as HTMLElement;
 const ghostCountVal = document.getElementById('ghost-count-val') as HTMLElement;
 const modeIndicator = document.getElementById('mode-indicator') as HTMLElement;
 const readingPathBar = document.getElementById('reading-path-bar') as HTMLElement;
@@ -257,10 +260,28 @@ document.getElementById('back-to-hub-btn')?.addEventListener('click', () => {
   sessionStore.leaveBookWorld();
 });
 
+function triggerLibrarianSearch(forceOverride?: boolean): void {
+  const q = questionInput.value.trim() || APP_CONFIG.seedQuestion;
+  const forceRefresh = forceOverride ?? Boolean(forceRefreshCheckbox?.checked);
+  if (sessionStore.getActiveSource()) {
+    sessionStore.leaveBookWorld();
+  }
+  runLibrarianPipelineStream({
+    question: q,
+    forceRefresh,
+    bannerEl: librarianNarrationBanner,
+    askBtnEl: askLibrarianBtn,
+  });
+}
+
 askLibrarianBtn.addEventListener('click', () => {
-  const q = questionInput.value.trim();
-  if (q) {
-    sessionStore.setQuestionAndSources(q);
+  triggerLibrarianSearch();
+});
+
+questionInput.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    triggerLibrarianSearch();
   }
 });
 
@@ -311,6 +332,9 @@ window.addEventListener('resize', () => {
 
 sessionStore.subscribe(syncUiAndScenes);
 syncUiAndScenes();
+
+// Automatically load the cached pipeline result (or run the pipeline if uncached) for the seed question
+triggerLibrarianSearch(false);
 
 // Main Three.js animation loop
 let lastTime = performance.now();

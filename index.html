@@ -26,6 +26,10 @@
             aria-label="Research question"
           />
           <button id="ask-librarian-btn" class="btn-primary">🎩 Ask Librarian</button>
+          <label class="force-refresh-label" title="Bypass disk cache and re-run live search, verification, and extraction">
+            <input id="force-refresh-checkbox" type="checkbox" />
+            Force refresh
+          </label>
         </div>
       </div>
 
@@ -36,6 +40,9 @@
         <div id="mode-indicator" class="stat-pill">📍 Victorian Hub (WASD + Drag)</div>
       </div>
     </header>
+
+    <!-- Live Librarian Pipeline Narration Banner -->
+    <div id="librarian-narration-banner" class="librarian-narration-banner hidden" role="status" aria-live="polite"></div>
 
     <!-- Reading Path Bar (Quick Jump + Status) -->
     <nav id="reading-path-bar" class="reading-path-bar" aria-label="Recommended Reading Path"></nav>
