@@ -62,13 +62,14 @@ export function createLabelTexture(
   ctx.textBaseline = 'middle';
 
   lines.forEach((line, idx) => {
-    const fontSize = idx === 0 ? 30 : 22;
+    const fontSize = idx === 0 ? 34 : 24;
     ctx.font = `${idx === 0 ? 'bold ' : ''}${fontSize}px Georgia, serif`;
     const y = (canvas.height / (lines.length + 1)) * (idx + 1);
-    ctx.fillText(line.slice(0, 38), canvas.width / 2, y);
+    ctx.fillText(line.slice(0, 36), canvas.width / 2, y);
   });
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.needsUpdate = true;
   return texture;
 }
@@ -230,7 +231,7 @@ export function buildThemedShelvesAndBooks(
       shelfGroup.add(plank);
     }
 
-    // Ornate top header sign with Theme Name
+    // Ornate large top header sign with Theme Name (only aisle signs in 3D; book details live in hover card)
     const aisleSignTex = createLabelTexture(
       [`Aisle ${themeIdx}: ${themeName}`, `${themeSources.length} Verified Source(s)`],
       '#23140b',
@@ -238,10 +239,10 @@ export function buildThemedShelvesAndBooks(
       '#fef08a'
     );
     const aisleSign = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.25, 0.78),
+      new THREE.PlaneGeometry(3.5, 0.92),
       new THREE.MeshBasicMaterial({ map: aisleSignTex })
     );
-    aisleSign.position.set(0, 3.62, 0.22);
+    aisleSign.position.set(0, 4.22, 0.22);
     shelfGroup.add(aisleSign);
 
     // Warm overhead sconce light per bookcase
@@ -315,29 +316,6 @@ export function buildThemedShelvesAndBooks(
       });
       creatureSprite.position.set(0.38, -0.34, 0.04);
       bookGroup.add(creatureSprite);
-
-      // Floating Tier & Path Order badge above the book
-      const statusPrefix = isCompleted ? '✓ COMPLETED' : `Path #${pathOrder}`;
-      const badgeTex = createLabelTexture(
-        [
-          `${statusPrefix} • [${tierInfo.label.toUpperCase()}]`,
-          source.title.slice(0, 32),
-          tierInfo.creature,
-        ],
-        isCompleted ? '#064e3b' : '#18121e',
-        tierInfo.cssColor,
-        '#ffffff'
-      );
-      const badgePlane = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.05, 0.52),
-        new THREE.MeshBasicMaterial({ map: badgeTex })
-      );
-      badgePlane.position.set(0, 0.62, 0.12);
-      badgePlane.userData = {
-        interactableType: 'book',
-        sourceId: source.id,
-      };
-      bookGroup.add(badgePlane);
 
       shelfGroup.add(bookGroup);
       shelfGroup.updateMatrixWorld(true);
